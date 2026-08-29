@@ -1,9 +1,14 @@
 // ═══════════════════════════════════════════════════════════════════════
-// Módulo de facturas y recibos — inspirado en el sistema de facturación
-// de Alexander Perfiles (folio legible, badge de estado, descarga en PDF,
-// compartir por WhatsApp/Web Share), adaptado a la paleta e identidad de
-// ELA y a facturas que pueden originarse en un PEDIDO (productos) o una
-// CITA (servicio), con soporte de abonos parciales (saldo pendiente).
+// Módulo de facturas y recibos — adopta el mismo método probado de
+// Alexander Perfiles y Ritual Cobre: la factura se dibuja en un iframe
+// aislado y se captura con html2canvas, así el PDF y la imagen que se
+// comparte por WhatsApp salen IDÉNTICOS a la vista previa (sin recortes
+// ni elementos mal centrados, que es lo que causaba jsPDF con su método
+// .html()). Al compartir, se adjunta la imagen real del documento (no
+// solo texto), con un texto corto de acompañamiento — igual que hace
+// Alexander Perfiles — y si el dispositivo no soporta compartir archivos,
+// en vez de mandar solo texto por WhatsApp se fuerza la descarga de la
+// imagen para que el cliente igual se quede con su factura.
 // ═══════════════════════════════════════════════════════════════════════
 import { jsPDF } from 'jspdf'
 
@@ -31,7 +36,6 @@ export type PaymentLike = {
 const money = (cents: number) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(cents / 100)
 
 const longDate = (value: string | Date) => new Intl.DateTimeFormat('es-DO', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(value))
-const shortDate = (value: string | Date) => new Intl.DateTimeFormat('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value))
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c] as string))
@@ -171,60 +175,102 @@ function buildReceiptHtml(invoice: InvoiceLike, payment: PaymentLike): string {
     </div>`
 }
 
-async function htmlToPdf(html: string): Promise<jsPDF> {
-  const container = document.createElement('div')
-  container.style.position = 'fixed'
-  container.style.top = '0'
-  container.style.left = '0'
-  container.style.zIndex = '-9999'
-  container.style.opacity = '0.01'
-  container.style.pointerEvents = 'none'
-  container.innerHTML = html
-  document.body.appendChild(container)
-  return new Promise((resolve) => {
-    const doc = new jsPDF('p', 'pt', 'letter')
-    doc.html(container, {
-      x: 0, y: 0, width: 612, windowWidth: 720, autoPaging: 'text',
-      callback: (pdf) => { document.body.removeChild(container); resolve(pdf) },
-    })
-  })
+// Renderiza el HTML de la factura/recibo en un iframe aislado (sin las
+// hojas de estilo del sitio, para que html2canvas capture únicamente los
+// estilos inline de arriba) y devuelve el canvas resultante a 720px de
+// ancho. El iframe se retira siempre, incluso si algo falla.
+async function renderDocCanvas(html: string) {
+  const { default: html2canvas } = await import('html2canvas')
+  const iframe = document.createElement('iframe')
+  iframe.style.position = 'fixed'
+  iframe.style.top = '0'
+  iframe.style.left = '-99999px'
+  iframe.style.width = '720px'
+  iframe.style.height = '10px'
+  iframe.style.border = '0'
+  document.body.appendChild(iframe)
+  try {
+    const idoc = iframe.contentDocument
+    if (!idoc) throw new Error('No se pudo preparar el documento.')
+    idoc.open()
+    idoc.write('<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0"></body></html>')
+    idoc.close()
+    idoc.body.innerHTML = html
+    if (idoc.fonts?.ready) await Promise.race([idoc.fonts.ready, new Promise((r) => setTimeout(r, 300))])
+    return await html2canvas(idoc.body.firstElementChild as HTMLElement, { scale: 2, backgroundColor: '#ffffff', windowWidth: 720 })
+  } finally {
+    document.body.removeChild(iframe)
+  }
 }
 
 function fileBase(name: string) {
   return String(name || 'documento').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
 }
 
+// Convierte el canvas capturado en un PDF de una sola imagen (igual que
+// Alexander Perfiles y Ritual Cobre): esto es lo que evita el recorte y
+// el mal centrado que causaba el método .html() de jsPDF, porque el PDF
+// simplemente embebe la misma imagen que ya se ve bien en la vista previa.
+function canvasToPdf(canvas: HTMLCanvasElement) {
+  const pdf = new jsPDF({ unit: 'pt', format: 'a4' })
+  const pageWidth = pdf.internal.pageSize.getWidth()
+  const imgWidth = pageWidth - 40
+  const imgHeight = imgWidth * (canvas.height / canvas.width)
+  pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 20, 20, imgWidth, imgHeight)
+  return pdf
+}
+
 export async function downloadInvoicePdf(invoice: InvoiceLike) {
-  const pdf = await htmlToPdf(buildInvoiceHtml(invoice))
-  pdf.save(`Factura-${fileBase(invoice.customerName)}-${invoice.folio}.pdf`)
+  const canvas = await renderDocCanvas(buildInvoiceHtml(invoice))
+  canvasToPdf(canvas).save(`Factura-${fileBase(invoice.customerName)}-${invoice.folio}.pdf`)
 }
 
 export async function downloadReceiptPdf(invoice: InvoiceLike, payment: PaymentLike) {
-  const pdf = await htmlToPdf(buildReceiptHtml(invoice, payment))
-  pdf.save(`Recibo-${fileBase(invoice.customerName)}-${payment.folio}.pdf`)
+  const canvas = await renderDocCanvas(buildReceiptHtml(invoice, payment))
+  canvasToPdf(canvas).save(`Recibo-${fileBase(invoice.customerName)}-${payment.folio}.pdf`)
 }
 
-function invoiceShareText(invoice: InvoiceLike) {
-  const saldo = Math.max(invoice.total - invoice.paid, 0)
-  return [
-    `*Factura ${invoice.folio} — ELA*`,
-    `Cliente: ${invoice.customerName}`,
-    `Concepto: ${invoice.concept}`,
-    `Fecha: ${shortDate(invoice.createdAt)}`,
-    '',
-    `Total: ${money(invoice.total)}`,
-    invoice.paid > 0 ? `Abonado: ${money(invoice.paid)}` : '',
-    saldo > 0 ? `Saldo pendiente: ${money(saldo)}` : 'Estado: Pagada',
-    '',
-    'ELA · La belleza de ser tú.',
-  ].filter(Boolean).join('\n')
-}
+// Renderiza el documento, lo convierte en imagen y lo comparte con un
+// texto corto de acompañamiento (solo lo necesario para identificarlo en
+// el chat — los detalles ya están en la imagen). Si el dispositivo no
+// puede compartir archivos, en vez de mandar un mensaje de WhatsApp con
+// solo texto se fuerza la descarga de la imagen.
+async function shareDoc(html: string, fileNamePrefix: string, folio: string, shareTitle: string, shareText: string) {
+  const canvas = await renderDocCanvas(html)
+  const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+  const nombreArchivo = `${fileNamePrefix}-${folio}.png`
 
-export async function shareInvoice(invoice: InvoiceLike, phone?: string) {
-  const text = invoiceShareText(invoice)
-  if (navigator.share) {
-    try { await navigator.share({ title: `Factura ${invoice.folio}`, text }); return } catch { /* usuario canceló */ }
+  if (blob) {
+    const file = new File([blob], nombreArchivo, { type: 'image/png' })
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: shareTitle, text: shareText })
+        return
+      }
+      if (navigator.share) {
+        await navigator.share({ title: shareTitle, text: shareText })
+        return
+      }
+    } catch (caught) {
+      if (caught instanceof Error && caught.name === 'AbortError') return // el usuario canceló
+      // si compartir falla por cualquier otro motivo, seguimos abajo y forzamos la descarga
+    }
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = nombreArchivo; a.click()
+    URL.revokeObjectURL(url)
+    return
   }
-  const target = phone ? phone.replace(/[^0-9]/g, '') : ''
-  window.open(`https://wa.me/${target}?text=${encodeURIComponent(text)}`, '_blank')
+  // Último respaldo si ni siquiera se pudo generar la imagen.
+  window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank')
+}
+
+export async function shareInvoice(invoice: InvoiceLike) {
+  const text = `Factura ${invoice.folio} de ${invoice.customerName} — ELA`
+  await shareDoc(buildInvoiceHtml(invoice), 'Factura', invoice.folio, `Factura ${invoice.folio}`, text)
+}
+
+export async function shareReceipt(invoice: InvoiceLike, payment: PaymentLike) {
+  const text = `Recibo ${payment.folio} de ${invoice.customerName} — ELA`
+  await shareDoc(buildReceiptHtml(invoice, payment), 'Recibo', payment.folio, `Recibo ${payment.folio}`, text)
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft, Boxes, Calendar, Download, FileText, ImagePlus, LayoutDashboard, LoaderCircle, LogOut, Pencil, PlusCircle, ReceiptText, Save, Scissors, Search, Share2, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
 import { cancelInvoice, checkSession, deleteAppointment, deleteCustomer, deleteOrder, deleteProduct, getAdminData, login, logout, registerPayment, saveAppointmentAdmin, saveContent, saveCustomer, saveProduct, updateAppointmentStatus, updateOrderStatus } from '@/lib/store'
-import { downloadInvoicePdf, downloadReceiptPdf, shareInvoice, type InvoiceLike, type PaymentLike } from '@/lib/invoice'
+import { downloadInvoicePdf, downloadReceiptPdf, shareInvoice, shareReceipt, type InvoiceLike, type PaymentLike } from '@/lib/invoice'
 
 type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
 type Order = { id: number; orderNumber: string; customerName: string; email: string; phone: string; address: string; total: number; status: string; paymentStatus: string; items: Array<{ name: string; price: number; quantity: number }>; createdAt: string | Date }
@@ -227,15 +227,15 @@ export function AdminPanel() {
         <div className="table-wrap"><table><thead><tr><th>Folio</th><th>Cliente</th><th>Concepto</th><th>Fecha</th><th>Total</th><th>Abonado</th><th>Saldo</th><th>Estado</th><th /></tr></thead><tbody>{filteredInvoices.map((invoice) => {
           const saldo = Math.max(invoice.total - invoice.paid, 0)
           return <tr key={invoice.id}>
-            <td><strong>{invoice.folio}</strong></td>
-            <td>{invoice.customerName}<small>{invoice.phone}</small></td>
-            <td>{invoice.concept}</td>
-            <td>{shortDate(invoice.createdAt)}</td>
-            <td>{money(invoice.total)}</td>
-            <td>{money(invoice.paid)}</td>
-            <td><strong className={saldo > 0 ? 'balance-due' : 'balance-clear'}>{money(saldo)}</strong></td>
-            <td><span className={`status-pill status-${invoice.status.toLowerCase()}`}>{invoice.status}</span></td>
-            <td><div className="row-actions">
+            <td data-label="Folio"><strong>{invoice.folio}</strong></td>
+            <td data-label="Cliente">{invoice.customerName}<small>{invoice.phone}</small></td>
+            <td data-label="Concepto">{invoice.concept}</td>
+            <td data-label="Fecha">{shortDate(invoice.createdAt)}</td>
+            <td data-label="Total">{money(invoice.total)}</td>
+            <td data-label="Abonado">{money(invoice.paid)}</td>
+            <td data-label="Saldo"><strong className={saldo > 0 ? 'balance-due' : 'balance-clear'}>{money(saldo)}</strong></td>
+            <td data-label="Estado"><span className={`status-pill status-${invoice.status.toLowerCase()}`}>{invoice.status}</span></td>
+            <td className="col-actions"><div className="row-actions">
               {saldo > 0 && invoice.status !== 'Cancelada' && <button title="Registrar abono" onClick={() => setPayingInvoice(invoice)}><Wallet /></button>}
               <button title="Ver factura" onClick={() => setViewingInvoice(invoice)}><ReceiptText /></button>
               {invoice.status !== 'Cancelada' && <button title="Cancelar factura" onClick={async () => { if (confirm(`¿Cancelar la factura ${invoice.folio}?`)) { await cancelInvoice({ data: invoice.id }); await refresh() } }}><Trash2 /></button>}
@@ -304,26 +304,26 @@ function statusOptionsFor(kind: 'order' | 'appointment') {
 
 function OrderTable({ orders, onRefresh, onDelete, onInvoice }: { orders: Order[]; onRefresh: () => Promise<void>; onDelete: (order: Order) => void; onInvoice: (order: Order) => void }) {
   return <div className="table-wrap"><table><thead><tr><th>Pedido</th><th>Cliente</th><th>Fecha</th><th>Estado</th><th>Pago</th><th>Total</th><th /></tr></thead><tbody>{orders.map((order) => <tr key={order.id}>
-    <td><strong>{order.orderNumber}</strong></td>
-    <td>{order.customerName}<small>{order.phone}</small></td>
-    <td>{shortDate(order.createdAt)}</td>
-    <td><select value={order.status} onChange={async (event) => { await updateOrderStatus({ data: { id: order.id, status: event.target.value, paymentStatus: order.paymentStatus } }); await onRefresh() }}>{statusOptionsFor('order').map((option) => <option key={option}>{option}</option>)}</select></td>
-    <td><select value={order.paymentStatus} onChange={async (event) => { await updateOrderStatus({ data: { id: order.id, status: order.status, paymentStatus: event.target.value } }); await onRefresh() }}><option>Pendiente</option><option>Pagado</option><option>Reembolsado</option></select></td>
-    <td><strong>{money(order.total)}</strong></td>
-    <td><div className="row-actions"><button title="Ver factura" onClick={() => onInvoice(order)}><ReceiptText /></button><button title="Eliminar" onClick={() => onDelete(order)}><Trash2 /></button></div></td>
+    <td data-label="Pedido"><strong>{order.orderNumber}</strong></td>
+    <td data-label="Cliente">{order.customerName}<small>{order.phone}</small></td>
+    <td data-label="Fecha">{shortDate(order.createdAt)}</td>
+    <td data-label="Estado"><select value={order.status} onChange={async (event) => { await updateOrderStatus({ data: { id: order.id, status: event.target.value, paymentStatus: order.paymentStatus } }); await onRefresh() }}>{statusOptionsFor('order').map((option) => <option key={option}>{option}</option>)}</select></td>
+    <td data-label="Pago"><select value={order.paymentStatus} onChange={async (event) => { await updateOrderStatus({ data: { id: order.id, status: order.status, paymentStatus: event.target.value } }); await onRefresh() }}><option>Pendiente</option><option>Pagado</option><option>Reembolsado</option></select></td>
+    <td data-label="Total"><strong>{money(order.total)}</strong></td>
+    <td className="col-actions"><div className="row-actions"><button title="Ver factura" onClick={() => onInvoice(order)}><ReceiptText /></button><button title="Eliminar" onClick={() => onDelete(order)}><Trash2 /></button></div></td>
   </tr>)}</tbody></table>{!orders.length && <div className="empty-admin">Todavía no hay pedidos.</div>}</div>
 }
 
 function AppointmentTable({ appointments, onRefresh, onDelete, onInvoice }: { appointments: Appointment[]; onRefresh: () => Promise<void>; onDelete: (item: Appointment) => void; onInvoice: (item: Appointment) => void }) {
   return <div className="table-wrap"><table><thead><tr><th>Cita</th><th>Clienta</th><th>Servicio</th><th>Fecha y hora</th><th>Estado</th><th>Pago</th><th>Precio</th><th /></tr></thead><tbody>{appointments.map((item) => <tr key={item.id}>
-    <td><strong>{item.appointmentNumber}</strong></td>
-    <td>{item.customerName}<small>{item.phone}</small></td>
-    <td>{item.serviceName}</td>
-    <td>{item.date} · {item.time}</td>
-    <td><select value={item.status} onChange={async (event) => { await updateAppointmentStatus({ data: { id: item.id, status: event.target.value, paymentStatus: item.paymentStatus } }); await onRefresh() }}>{statusOptionsFor('appointment').map((option) => <option key={option}>{option}</option>)}</select></td>
-    <td><select value={item.paymentStatus} onChange={async (event) => { await updateAppointmentStatus({ data: { id: item.id, status: item.status, paymentStatus: event.target.value } }); await onRefresh() }}><option>Pendiente</option><option>Pagado</option><option>Reembolsado</option></select></td>
-    <td><strong>{money(item.price)}</strong></td>
-    <td><div className="row-actions"><button title="Ver factura" onClick={() => onInvoice(item)}><ReceiptText /></button><button title="Eliminar" onClick={() => onDelete(item)}><Trash2 /></button></div></td>
+    <td data-label="Cita"><strong>{item.appointmentNumber}</strong></td>
+    <td data-label="Clienta">{item.customerName}<small>{item.phone}</small></td>
+    <td data-label="Servicio">{item.serviceName}</td>
+    <td data-label="Fecha y hora">{item.date} · {item.time}</td>
+    <td data-label="Estado"><select value={item.status} onChange={async (event) => { await updateAppointmentStatus({ data: { id: item.id, status: event.target.value, paymentStatus: item.paymentStatus } }); await onRefresh() }}>{statusOptionsFor('appointment').map((option) => <option key={option}>{option}</option>)}</select></td>
+    <td data-label="Pago"><select value={item.paymentStatus} onChange={async (event) => { await updateAppointmentStatus({ data: { id: item.id, status: item.status, paymentStatus: event.target.value } }); await onRefresh() }}><option>Pendiente</option><option>Pagado</option><option>Reembolsado</option></select></td>
+    <td data-label="Precio"><strong>{money(item.price)}</strong></td>
+    <td className="col-actions"><div className="row-actions"><button title="Ver factura" onClick={() => onInvoice(item)}><ReceiptText /></button><button title="Eliminar" onClick={() => onDelete(item)}><Trash2 /></button></div></td>
   </tr>)}</tbody></table>{!appointments.length && <div className="empty-admin">No hay citas para mostrar.</div>}</div>
 }
 
@@ -341,9 +341,9 @@ function InvoiceViewer({ invoice, payments, onClose }: { invoice: Invoice; payme
     </div>
     <div className="invoice-actions">
       <button className="admin-action" disabled={working} onClick={async () => { setWorking(true); await downloadInvoicePdf(invoice); setWorking(false) }}><Download />Descargar factura</button>
-      <button className="admin-action" disabled={working} onClick={() => shareInvoice(invoice, invoice.phone)}><Share2 />Compartir por WhatsApp</button>
+      <button className="admin-action" disabled={working} onClick={async () => { setWorking(true); await shareInvoice(invoice); setWorking(false) }}><Share2 />Compartir por WhatsApp</button>
     </div>
-    {payments.length > 0 && <div className="payment-history"><h3>Historial de abonos</h3>{payments.map((payment) => <div key={payment.id} className="payment-row"><div><strong>{money(payment.amount)}</strong><span>{payment.method} · {shortDate(payment.createdAt)}</span></div><button onClick={() => downloadReceiptPdf(invoice, payment)}><Download size={15} />Recibo {payment.folio}</button></div>)}</div>}
+    {payments.length > 0 && <div className="payment-history"><h3>Historial de abonos</h3>{payments.map((payment) => <div key={payment.id} className="payment-row"><div><strong>{money(payment.amount)}</strong><span>{payment.method} · {shortDate(payment.createdAt)}</span></div><div className="row-actions"><button onClick={() => downloadReceiptPdf(invoice, payment)}><Download size={15} />Recibo {payment.folio}</button><button onClick={() => shareReceipt(invoice, payment)}><Share2 size={15} /></button></div></div>)}</div>}
   </div></div>
 }
 

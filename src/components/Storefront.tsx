@@ -105,18 +105,21 @@ export function Storefront({ data }: Props) {
     </aside>
 
     <main>
-      <section className="hero" id="inicio">
-        <div className="hero-copy reveal"><p className="eyebrow"><Sparkles size={15} />{copy.eyebrow}</p><h1>{copy.heroTitle}</h1><p className="hero-lede">{copy.heroDescription}</p><a className="primary-button" href="#servicios">{copy.heroCta}<ArrowRight /></a></div>
-        <div className="hero-visual reveal delay-1"><div className="image-frame"><img src={copy.heroImage} alt="ELA — belleza y cuidado" /></div><div className="orbit-note">Belleza · Cuidado<br />Bienestar</div><span className="vertical-caption">MIMATE · CUIDA TU PIEL · REALZA TU BELLEZA</span></div>
+      <section className="ela-hero" id="inicio">
+        <p className="ela-eyebrow reveal"><Sparkles size={14} />{copy.eyebrow}</p>
+        <h1 className="reveal delay-1">{copy.heroTitle}</h1>
+        <p className="ela-hero-lede reveal delay-1">{copy.heroDescription}</p>
+        <a className="primary-button reveal delay-1" href="#servicios">{copy.heroCta}<ArrowRight /></a>
+        <div className="ela-hero-banner reveal delay-1"><img src={copy.heroImage} alt="ELA — belleza y cuidado" /></div>
       </section>
 
-      <section className="benefits" id="beneficios">
-        <div className="section-intro"><span>01 — MANIFIESTO</span><h2>{copy.benefitsTitle}</h2></div>
-        <div className="benefit-list">{[1, 2, 3].map((number) => <article key={number}><span>0{number}</span><h3>{copy[`benefit${number}Title`]}</h3><p>{copy[`benefit${number}Text`]}</p></article>)}</div>
+      <section className="ela-manifesto" id="beneficios">
+        <div className="ela-section-heading"><span>Nuestro compromiso</span><h2>{copy.benefitsTitle}</h2></div>
+        <div className="ela-manifesto-grid">{[1, 2, 3].map((number) => <article key={number}><span>0{number}</span><h3>{copy[`benefit${number}Title`]}</h3><p>{copy[`benefit${number}Text`]}</p></article>)}</div>
       </section>
 
       <section className="catalog services-section" id="servicios">
-        <div className="catalog-heading"><div><span>02 — SERVICIOS DE BELLEZA</span><h2>{copy.servicesTitle}</h2></div><p>{copy.servicesDescription}</p></div>
+        <div className="ela-section-heading"><span>Servicios de belleza</span><h2>{copy.servicesTitle}</h2><p>{copy.servicesDescription}</p></div>
         <div className="service-grid">
           {services.map((service) => <article className="service-card" key={service.id}>
             <div className="service-image"><img src={service.image} alt={service.name} /></div>
@@ -133,7 +136,7 @@ export function Storefront({ data }: Props) {
       </section>
 
       <section className="catalog" id="catalogo">
-        <div className="catalog-heading"><div><span>03 — PRODUCTOS ARTESANALES</span><h2>{copy.catalogTitle}</h2></div><p>{copy.catalogDescription}</p></div>
+        <div className="ela-section-heading"><span>Productos artesanales</span><h2>{copy.catalogTitle}</h2><p>{copy.catalogDescription}</p></div>
         <div className="catalog-layout">
           <aside className="filters"><label><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar producto..." /></label><div className="category-list">{categories.map((item) => <button className={category === item ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}<span>{item === 'Todos' ? goods.length : goods.filter((product) => product.category === item).length}</span></button>)}</div></aside>
           <div className="product-list">{visibleProducts.map((product, index) => <article className="product-row" key={product.id}>
@@ -145,7 +148,12 @@ export function Storefront({ data }: Props) {
         </div>
       </section>
 
-      <section className="story" id="historia"><div className="story-art"><span>E</span><div></div></div><div className="story-copy"><span>04 — NUESTRA HISTORIA</span><h2>{copy.storyTitle}</h2><p>{copy.storyText}</p><div className="signature">ELA</div></div></section>
+      <section className="ela-story" id="historia">
+        <span className="ela-eyebrow">Nuestra historia</span>
+        <h2>{copy.storyTitle}</h2>
+        <p>{copy.storyText}</p>
+        <div className="ela-story-signature">ELA</div>
+      </section>
     </main>
 
     <footer id="contacto">
