@@ -4,6 +4,10 @@
   "main": "@tanstack/react-start/server-entry",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "GITHUB_BRANCH": "main",
+    "GITHUB_UPLOAD_PATH": "public/uploads"
+  },
   "observability": {
     "enabled": true
   }

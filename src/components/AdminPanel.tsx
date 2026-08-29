@@ -31,6 +31,7 @@ export function AdminPanel() {
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [editing, setEditing] = useState<ProductDraft | null>(null)
   const [editingCustomer, setEditingCustomer] = useState<CustomerDraft | null>(null)
   const [bookingDraft, setBookingDraft] = useState<AppointmentDraft | null>(null)
@@ -100,7 +101,7 @@ export function AdminPanel() {
   }
 
   async function uploadImage(file: File, target: 'product' | 'hero') {
-    setBusy(true); setError('')
+    setUploading(true); setError('')
     try {
       const body = new FormData(); body.append('file', file)
       const response = await fetch('/api/upload', { method: 'POST', body })
@@ -109,7 +110,7 @@ export function AdminPanel() {
       if (target === 'product') setEditing((current) => current ? { ...current, image: result.url! } : current)
       else setContentDraft((current) => ({ ...current, heroImage: result.url! }))
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'No pudimos subir la imagen.') }
-    finally { setBusy(false) }
+    finally { setUploading(false) }
   }
 
   const filteredProducts = useMemo(() => {
@@ -250,10 +251,10 @@ export function AdminPanel() {
         <div className="customer-grid">{filteredCustomers.map((customer) => <article key={customer.id}><div className="customer-card-top"><div className="avatar">{customer.name.slice(0, 2).toUpperCase()}</div><div className="row-actions"><button onClick={() => setEditingCustomer(customer)}><Pencil /></button><button onClick={async () => { if (confirm(`¿Eliminar a ${customer.name}?`)) { await deleteCustomer({ data: customer.id }); await refresh() } }}><Trash2 /></button></div></div><h3>{customer.name}</h3>{customer.email && <a href={`mailto:${customer.email}`}>{customer.email}</a>}<p>{customer.phone}</p><p>{customer.address}</p>{customer.notes && <small className="customer-notes">{customer.notes}</small>}<small>{data.orders.filter((order) => order.customerName === customer.name).length} pedidos · {data.appointments.filter((item) => item.customerName === customer.name).length} citas</small></article>)}{!filteredCustomers.length && <div className="empty-admin">No hay clientes que mostrar.</div>}</div>
       </section>}
 
-      {tab === 'contenido' && <ContentEditor values={contentDraft} onChange={setContentDraft} onUpload={(file) => uploadImage(file, 'hero')} onSave={async () => { setBusy(true); await saveContent({ data: contentDraft }); await refresh(); setBusy(false) }} busy={busy} />}
+      {tab === 'contenido' && <ContentEditor values={contentDraft} onChange={setContentDraft} onUpload={(file) => uploadImage(file, 'hero')} onSave={async () => { setBusy(true); await saveContent({ data: contentDraft }); await refresh(); setBusy(false) }} busy={busy} uploading={uploading} />}
     </main>
 
-    {editing && <div className="modal-wrap"><form className="product-modal" onSubmit={handleProduct}><button type="button" className="modal-close" onClick={() => setEditing(null)}>×</button><span>CATÁLOGO</span><h2>{editing.id ? 'Editar artículo' : 'Nuevo artículo'}</h2>
+    {editing && <div className="modal-wrap"><form className="product-modal" onSubmit={handleProduct}><button type="button" className="modal-close" onClick={() => setEditing(null)}>×</button><span>CATÁLOGO</span><h2>{editing.id ? 'Editar artículo' : 'Nuevo artículo'}</h2>{error && <p className="form-error">{error}</p>}
       <div className="form-grid">
         <label>Tipo<select value={editing.kind} onChange={(event) => setEditing({ ...editing, kind: event.target.value })}><option value="servicio">Servicio (se agenda)</option><option value="producto">Producto (se compra)</option></select></label>
         <label>Categoría<input required placeholder="Cejas, Pestañas, Jabones..." value={editing.category} onChange={(event) => setEditing({ ...editing, category: event.target.value })} /></label>
@@ -262,7 +263,7 @@ export function AdminPanel() {
         <label>Precio en centavos<input required type="number" min="0" value={editing.price} onChange={(event) => setEditing({ ...editing, price: Number(event.target.value) })} /></label>
         {editing.kind === 'producto' ? <label>Existencias<input required type="number" min="0" value={editing.stock} onChange={(event) => setEditing({ ...editing, stock: Number(event.target.value) })} /></label> : <label>Duración (minutos)<input required type="number" min="5" value={editing.durationMinutes} onChange={(event) => setEditing({ ...editing, durationMinutes: Number(event.target.value) })} /></label>}
         <label className="wide">URL de imagen<input required value={editing.image} onChange={(event) => setEditing({ ...editing, image: event.target.value })} /></label>
-        <label className="upload-zone wide"><ImagePlus />Subir imagen desde el dispositivo<input hidden type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && uploadImage(event.target.files[0], 'product')} /></label>
+        <label className="upload-zone wide"><ImagePlus />{uploading ? 'Subiendo...' : 'Subir imagen desde el dispositivo'}<input hidden disabled={uploading} type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && uploadImage(event.target.files[0], 'product')} /></label>
         <label className="check-field"><input type="checkbox" checked={editing.featured} onChange={(event) => setEditing({ ...editing, featured: event.target.checked })} />Destacado</label>
         <label className="check-field"><input type="checkbox" checked={editing.active} onChange={(event) => setEditing({ ...editing, active: event.target.checked })} />Visible en la tienda</label>
       </div>
@@ -347,7 +348,7 @@ function InvoiceViewer({ invoice, payments, onClose }: { invoice: Invoice; payme
   </div></div>
 }
 
-function ContentEditor({ values, onChange, onUpload, onSave, busy }: { values: Record<string, string>; onChange: (value: Record<string, string>) => void; onUpload: (file: File) => void; onSave: () => Promise<void>; busy: boolean }) {
+function ContentEditor({ values, onChange, onUpload, onSave, busy, uploading }: { values: Record<string, string>; onChange: (value: Record<string, string>) => void; onUpload: (file: File) => void; onSave: () => Promise<void>; busy: boolean; uploading: boolean }) {
   const groups = useMemo(() => [
     ['Marca y navegación', ['brandName', 'brandTagline', 'navServices', 'navCatalog', 'navBenefits', 'navContact']],
     ['Hero principal', ['eyebrow', 'heroTitle', 'heroDescription', 'heroCta', 'heroImage']],
@@ -360,5 +361,5 @@ function ContentEditor({ values, onChange, onUpload, onSave, busy }: { values: R
   ], [])
   const labels: Record<string, string> = { brandName: 'Nombre de marca', brandTagline: 'Eslogan', navServices: 'Navegación: servicios', navCatalog: 'Navegación: productos', navBenefits: 'Navegación: beneficios', navContact: 'Navegación: contacto', eyebrow: 'Texto superior', heroTitle: 'Título principal', heroDescription: 'Descripción principal', heroCta: 'Botón principal', heroImage: 'Imagen principal (URL)', benefitsTitle: 'Título de beneficios', benefit1Title: 'Beneficio 1 — título', benefit1Text: 'Beneficio 1 — texto', benefit2Title: 'Beneficio 2 — título', benefit2Text: 'Beneficio 2 — texto', benefit3Title: 'Beneficio 3 — título', benefit3Text: 'Beneficio 3 — texto', servicesTitle: 'Título de servicios', servicesDescription: 'Descripción de servicios', catalogTitle: 'Título del catálogo', catalogDescription: 'Descripción del catálogo', storyTitle: 'Título de historia', storyText: 'Historia de marca', footerText: 'Descripción del footer', whatsapp: 'Número de WhatsApp', location: 'Ubicación', instagram: 'Instagram', tiktok: 'TikTok', schedule: 'Horario', developerCredit: 'Crédito del desarrollador', cartTitle: 'Título del carrito', checkoutTitle: 'Título del checkout', appointmentTitle: 'Título del formulario de citas', notificationEmail: 'Correo para avisos de pedidos y citas' }
   const hints: Record<string, string> = { notificationEmail: 'Cada vez que alguien complete un pedido o agende una cita, se enviará un correo automático con los detalles a esta dirección.' }
-  return <section className="content-editor"><div className="editor-top"><div><span>TEXTOS E IMÁGENES</span><h2>Editor de la tienda</h2><p>Cambia la voz de la marca sin tocar el código.</p></div><button className="admin-action" disabled={busy} onClick={onSave}><Save />{busy ? 'Guardando...' : 'Guardar cambios'}</button></div>{groups.map(([title, keys]) => <div className="editor-group" key={title as string}><h3>{title}</h3><div className="editor-fields">{(keys as string[]).map((key) => <label className={['heroDescription', 'storyText', 'catalogDescription', 'servicesDescription'].includes(key) ? 'wide' : ''} key={key}>{labels[key]}{['heroDescription', 'storyText', 'catalogDescription', 'servicesDescription'].includes(key) ? <textarea rows={3} value={values[key] ?? ''} onChange={(event) => onChange({ ...values, [key]: event.target.value })} /> : <input type={key === 'notificationEmail' ? 'email' : 'text'} placeholder={key === 'notificationEmail' ? 'pedidos@tudominio.com' : undefined} value={values[key] ?? ''} onChange={(event) => onChange({ ...values, [key]: event.target.value })} />} {hints[key] && <small className="field-hint">{hints[key]}</small>} {key === 'heroImage' && <span className="inline-upload"><ImagePlus />Subir desde dispositivo<input hidden type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && onUpload(event.target.files[0])} /></span>}</label>)}</div></div>)}</section>
+  return <section className="content-editor"><div className="editor-top"><div><span>TEXTOS E IMÁGENES</span><h2>Editor de la tienda</h2><p>Cambia la voz de la marca sin tocar el código.</p></div><button className="admin-action" disabled={busy} onClick={onSave}><Save />{busy ? 'Guardando...' : 'Guardar cambios'}</button></div>{groups.map(([title, keys]) => <div className="editor-group" key={title as string}><h3>{title}</h3><div className="editor-fields">{(keys as string[]).map((key) => <label className={['heroDescription', 'storyText', 'catalogDescription', 'servicesDescription'].includes(key) ? 'wide' : ''} key={key}>{labels[key]}{['heroDescription', 'storyText', 'catalogDescription', 'servicesDescription'].includes(key) ? <textarea rows={3} value={values[key] ?? ''} onChange={(event) => onChange({ ...values, [key]: event.target.value })} /> : <input type={key === 'notificationEmail' ? 'email' : 'text'} placeholder={key === 'notificationEmail' ? 'pedidos@tudominio.com' : undefined} value={values[key] ?? ''} onChange={(event) => onChange({ ...values, [key]: event.target.value })} />} {hints[key] && <small className="field-hint">{hints[key]}</small>} {key === 'heroImage' && <span className="inline-upload"><ImagePlus />{uploading ? 'Subiendo...' : 'Subir desde dispositivo'}<input hidden disabled={uploading} type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && onUpload(event.target.files[0])} /></span>}</label>)}</div></div>)}</section>
 }
