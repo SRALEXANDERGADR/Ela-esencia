@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { ArrowLeft, Boxes, Calendar, Download, FileText, ImagePlus, LayoutDashboard, LoaderCircle, LogOut, Pencil, PlusCircle, ReceiptText, Save, Scissors, Search, Share2, Trash2, UserPlus, Users, Wallet } from 'lucide-react'
 import { cancelInvoice, checkSession, deleteAppointment, deleteCustomer, deleteOrder, deleteProduct, getAdminData, login, logout, registerPayment, saveAppointmentAdmin, saveContent, saveCustomer, saveProduct, updateAppointmentStatus, updateOrderStatus } from '@/lib/store'
 import { downloadInvoicePdf, downloadReceiptPdf, shareInvoice, shareReceipt, type InvoiceLike, type PaymentLike } from '@/lib/invoice'
+import { compressImage } from '@/lib/image'
 
 type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
 type Order = { id: number; orderNumber: string; customerName: string; email: string; phone: string; address: string; total: number; status: string; paymentStatus: string; items: Array<{ name: string; price: number; quantity: number }>; createdAt: string | Date }
@@ -103,7 +104,8 @@ export function AdminPanel() {
   async function uploadImage(file: File, target: 'product' | 'hero') {
     setUploading(true); setError('')
     try {
-      const body = new FormData(); body.append('file', file)
+      const compressed = await compressImage(file)
+      const body = new FormData(); body.append('file', compressed)
       const response = await fetch('/api/upload', { method: 'POST', body })
       const result = await response.json() as { url?: string; error?: string }
       if (!response.ok || !result.url) throw new Error(result.error || 'No pudimos subir la imagen.')
