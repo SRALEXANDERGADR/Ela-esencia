@@ -138,20 +138,19 @@ export const createOrder = createServerFn({ method: 'POST' })
     const orderNumber = makeFolio('PED')
     const createdAt = new Date()
 
-    const [order] = await db.transaction(async (tx) => {
-      const inserted = await tx.insert(orders).values({ orderNumber, customerId: customer.id, customerName: data.name, email: data.email, phone: data.phone, address: data.address, items: calculated, total, createdAt }).returning()
-      for (const item of calculated) await tx.update(products).set({ stock: sql`${products.stock} - ${item.quantity}` }).where(and(eq(products.id, item.id), sql`${products.stock} >= ${item.quantity}`))
-      await tx.insert(invoices).values({
-        folio: makeFolio('FAC'),
-        sourceType: 'pedido',
-        sourceId: inserted[0].id,
-        customerId: customer.id,
-        customerName: data.name,
-        phone: data.phone,
-        concept: `Pedido ${orderNumber} — ${calculated.length} artículo(s)`,
-        total,
-      })
-      return inserted
+    // El driver HTTP de Neon no soporta transacciones interactivas, así que
+    // estas operaciones se hacen en secuencia en vez de dentro de una tx.
+    const [order] = await db.insert(orders).values({ orderNumber, customerId: customer.id, customerName: data.name, email: data.email, phone: data.phone, address: data.address, items: calculated, total, createdAt }).returning()
+    for (const item of calculated) await db.update(products).set({ stock: sql`${products.stock} - ${item.quantity}` }).where(and(eq(products.id, item.id), sql`${products.stock} >= ${item.quantity}`))
+    await db.insert(invoices).values({
+      folio: makeFolio('FAC'),
+      sourceType: 'pedido',
+      sourceId: order.id,
+      customerId: customer.id,
+      customerName: data.name,
+      phone: data.phone,
+      concept: `Pedido ${orderNumber} — ${calculated.length} artículo(s)`,
+      total,
     })
 
     const [notificationRow] = await db.select().from(content).where(eq(content.key, 'notificationEmail')).limit(1)
@@ -172,19 +171,16 @@ export const createAppointment = createServerFn({ method: 'POST' })
     const appointmentNumber = makeFolio('CITA')
     const createdAt = new Date()
 
-    const [appointment] = await db.transaction(async (tx) => {
-      const inserted = await tx.insert(appointments).values({ appointmentNumber, customerId: customer.id, customerName: data.name, phone: data.phone, email: data.email, serviceId: service.id, serviceName: service.name, price: service.price, date: data.date, time: data.time, notes: data.notes, createdAt }).returning()
-      await tx.insert(invoices).values({
-        folio: makeFolio('FAC'),
-        sourceType: 'cita',
-        sourceId: inserted[0].id,
-        customerId: customer.id,
-        customerName: data.name,
-        phone: data.phone,
-        concept: `${service.name} — cita del ${data.date} ${data.time}`,
-        total: service.price,
-      })
-      return inserted
+    const [appointment] = await db.insert(appointments).values({ appointmentNumber, customerId: customer.id, customerName: data.name, phone: data.phone, email: data.email, serviceId: service.id, serviceName: service.name, price: service.price, date: data.date, time: data.time, notes: data.notes, createdAt }).returning()
+    await db.insert(invoices).values({
+      folio: makeFolio('FAC'),
+      sourceType: 'cita',
+      sourceId: appointment.id,
+      customerId: customer.id,
+      customerName: data.name,
+      phone: data.phone,
+      concept: `${service.name} — cita del ${data.date} ${data.time}`,
+      total: service.price,
     })
 
     const [notificationRow] = await db.select().from(content).where(eq(content.key, 'notificationEmail')).limit(1)
@@ -282,11 +278,8 @@ export const saveAppointmentAdmin = createServerFn({ method: 'POST' })
     if (!service) throw new Error('Selecciona un servicio válido.')
     const customer = await findOrCreateCustomer(data)
     const appointmentNumber = makeFolio('CITA')
-    const [appointment] = await db.transaction(async (tx) => {
-      const inserted = await tx.insert(appointments).values({ appointmentNumber, customerId: customer.id, customerName: data.name, phone: data.phone, email: data.email, serviceId: service.id, serviceName: service.name, price: service.price, date: data.date, time: data.time, notes: data.notes }).returning()
-      await tx.insert(invoices).values({ folio: makeFolio('FAC'), sourceType: 'cita', sourceId: inserted[0].id, customerId: customer.id, customerName: data.name, phone: data.phone, concept: `${service.name} — cita del ${data.date} ${data.time}`, total: service.price })
-      return inserted
-    })
+    const [appointment] = await db.insert(appointments).values({ appointmentNumber, customerId: customer.id, customerName: data.name, phone: data.phone, email: data.email, serviceId: service.id, serviceName: service.name, price: service.price, date: data.date, time: data.time, notes: data.notes }).returning()
+    await db.insert(invoices).values({ folio: makeFolio('FAC'), sourceType: 'cita', sourceId: appointment.id, customerId: customer.id, customerName: data.name, phone: data.phone, concept: `${service.name} — cita del ${data.date} ${data.time}`, total: service.price })
     return appointment.id
   })
 
@@ -303,10 +296,8 @@ export const registerPayment = createServerFn({ method: 'POST' })
     const folio = makeFolio('REC')
     const newPaid = invoice.paid + Number(data.amount)
     const status = newPaid >= invoice.total ? 'Pagada' : newPaid > 0 ? 'Abonado' : 'Pendiente'
-    await db.transaction(async (tx) => {
-      await tx.insert(payments).values({ folio, invoiceId: invoice.id, amount: Number(data.amount), method: data.method, note: data.note })
-      await tx.update(invoices).set({ paid: newPaid, status }).where(eq(invoices.id, invoice.id))
-    })
+    await db.insert(payments).values({ folio, invoiceId: invoice.id, amount: Number(data.amount), method: data.method, note: data.note })
+    await db.update(invoices).set({ paid: newPaid, status }).where(eq(invoices.id, invoice.id))
     return { folio }
   })
 
