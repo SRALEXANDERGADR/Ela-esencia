@@ -3,19 +3,37 @@ import { useEffect, useRef, useState } from 'react'
 /**
  * Botón de compartir para el navbar.
  * - Abre un popover tipo "speech bubble" (con caret apuntando al botón).
- * - Nace visualmente desde el botón (transform-origin) con fade-in + scale-up.
+ * - Nace visualmente desde el botón (transform-origin) con fade-in + scale-up,
+ *   con una animación deliberadamente pausada (1.3s) para que se note.
  * - Se cierra con fade-out + scale-down al hacer click afuera, presionar
  *   Escape, o elegir una opción — y recién después de la animación se
  *   desmonta del DOM (no hay "salto" abrupto).
+ *
+ * Comportamiento de cada opción (todas comparten como MENSAJE, nunca
+ * como publicación):
+ * - WhatsApp: abre wa.me con el texto y el link ya armados para enviar.
+ * - Facebook: intenta abrir la app de Facebook directo en modo "enviar"
+ *   (fb-messenger://share), que manda el link como mensaje privado. Si
+ *   la app no está instalada, cae de respaldo al share nativo del
+ *   sistema (o al diálogo web de Facebook como último recurso).
+ * - Instagram: abre el menú nativo de compartir del teléfono
+ *   (navigator.share), que en Instagram entrega el link directo al
+ *   chat, como mensaje. Si el navegador no soporta share nativo, copia
+ *   el enlace como respaldo.
  */
 
-const CLOSE_ANIMATION_MS = 180
+// La duración de la animación (1.3s) vive en la transición CSS de
+// .share-popover (styles.css). Esta constante solo controla cuándo se
+// desmonta el popover del DOM una vez termina la animación de cierre,
+// y debe coincidir con esa misma duración.
+const CLOSE_ANIMATION_MS = 1300
+const DEEP_LINK_FALLBACK_MS = 1600
 
 type PopoverState = 'closed' | 'open' | 'closing'
 type Feedback = 'link' | 'instagram' | null
 
 const ShareIcon = () => (
-  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="18" cy="5" r="3" />
     <circle cx="6" cy="12" r="3" />
     <circle cx="18" cy="19" r="3" />
@@ -25,22 +43,22 @@ const ShareIcon = () => (
 )
 
 const WhatsAppIcon = () => (
-  <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-    <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.79.47 3.47 1.29 4.93L2 22l5.31-1.39a9.87 9.87 0 0 0 4.73 1.2h.01c5.46 0 9.9-4.45 9.9-9.9C21.95 6.45 17.5 2 12.04 2Zm5.8 14.06c-.24.68-1.4 1.3-1.93 1.35-.5.05-1.02.24-3.4-.71-2.87-1.14-4.71-4.07-4.85-4.26-.14-.19-1.16-1.55-1.16-2.96 0-1.4.74-2.09 1-2.38.26-.28.57-.35.76-.35.19 0 .38 0 .55.01.18.01.42-.07.65.5.24.58.82 2 .89 2.15.07.15.12.32.02.51-.1.19-.15.31-.3.48-.15.17-.31.38-.44.51-.15.15-.3.31-.13.6.17.29.75 1.24 1.61 2.01 1.11.99 2.04 1.3 2.33 1.45.29.14.46.12.63-.07.17-.19.72-.84.92-1.13.19-.28.38-.24.63-.14.26.09 1.65.78 1.93.92.29.14.48.21.55.33.07.12.07.7-.16 1.38Z" />
+  <svg viewBox="0 0 32 32" width="17" height="17" fill="currentColor">
+    <path d="M16.02 3C9.4 3 4 8.4 4 15.02c0 2.22.6 4.32 1.66 6.12L3 29l8.06-2.62a12.9 12.9 0 0 0 4.96.98h.01C22.65 27.36 28 21.97 28 15.34 28 8.72 22.65 3 16.02 3Zm0 22.5c-1.66 0-3.28-.44-4.69-1.28l-.34-.2-4.79 1.56 1.57-4.67-.22-.36a10.35 10.35 0 0 1-1.59-5.53c0-5.72 4.66-10.38 10.38-10.38S26.4 9.3 26.4 15.02 21.74 25.5 16.02 25.5Zm5.68-7.77c-.31-.16-1.84-.91-2.12-1.01-.29-.1-.5-.16-.7.15-.21.32-.8 1.01-.98 1.21-.18.21-.36.23-.67.08-.31-.16-1.3-.48-2.48-1.53-.92-.82-1.53-1.83-1.72-2.14-.18-.32-.02-.49.14-.65.14-.14.31-.36.47-.55.16-.18.21-.31.31-.52.1-.21.05-.39-.03-.55-.08-.16-.7-1.68-.96-2.3-.25-.6-.51-.52-.7-.53h-.6c-.21 0-.55.08-.83.39-.29.32-1.09 1.06-1.09 2.59s1.12 3 1.27 3.21c.16.21 2.2 3.35 5.33 4.7.75.32 1.33.51 1.78.66.75.24 1.43.2 1.97.12.6-.09 1.84-.75 2.1-1.48.26-.72.26-1.34.18-1.47-.08-.13-.28-.21-.59-.37Z" />
   </svg>
 )
 
 const InstagramIcon = () => (
-  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8">
-    <rect x="3" y="3" width="18" height="18" rx="5" />
-    <circle cx="12" cy="12" r="4" />
-    <circle cx="17.2" cy="6.8" r="1" fill="currentColor" stroke="none" />
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7">
+    <rect x="3" y="3" width="18" height="18" rx="5.5" />
+    <circle cx="12" cy="12" r="4.2" />
+    <circle cx="17" cy="7" r="1.1" fill="currentColor" stroke="none" />
   </svg>
 )
 
 const FacebookIcon = () => (
-  <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-    <path d="M13.5 21v-7.6h2.6l.4-3H13.5V8.3c0-.87.24-1.46 1.5-1.46h1.6V4.14C16.3 4.1 15.36 4 14.26 4c-2.3 0-3.87 1.4-3.87 3.98v2.42H7.8v3h2.59V21h3.1Z" />
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+    <path d="M14.5 21.9v-7.86h2.64l.4-3.06H14.5V9c0-.89.25-1.49 1.52-1.49h1.62V4.77c-.28-.04-1.24-.12-2.36-.12-2.34 0-3.94 1.43-3.94 4.04v2.33H8.7v3.06h2.64v7.86h3.16Z" />
   </svg>
 )
 
@@ -91,18 +109,68 @@ export function ShareButton({ title }: { title: string }) {
   }, [state])
 
   const shareUrl = typeof window !== 'undefined' ? window.location.href : ''
+  const shareText = `${title} ${shareUrl}`
 
   const openWindow = (url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer,width=600,height=640')
+  }
+
+  // Intenta abrir un esquema de app nativa (deep link). Si la pestaña
+  // pierde el foco antes del tiempo límite, asumimos que la app abrió y
+  // cancelamos el respaldo. Si no, ejecutamos el respaldo (la app no
+  // está instalada o el dispositivo no soporta el esquema).
+  const tryDeepLink = (deepLink: string, fallback: () => void) => {
+    let handled = false
+    const onBlur = () => {
+      handled = true
+      window.removeEventListener('blur', onBlur)
+    }
+    window.addEventListener('blur', onBlur)
+    window.location.href = deepLink
+    setTimeout(() => {
+      window.removeEventListener('blur', onBlur)
+      if (!handled && !document.hidden) fallback()
+    }, DEEP_LINK_FALLBACK_MS)
+  }
+
+  // WhatsApp: comparte directo como mensaje (ya funciona perfecto así).
+  const shareWhatsApp = () => {
+    openWindow(`https://wa.me/?text=${encodeURIComponent(shareText)}`)
     requestClose()
   }
 
-  const shareWhatsApp = () => openWindow(`https://wa.me/?text=${encodeURIComponent(`${title} ${shareUrl}`)}`)
-  const shareFacebook = () => openWindow(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`)
+  // Facebook: el usuario ya tiene la app y su sesión iniciada, así que
+  // abrimos directo el modo "enviar" de Facebook (Messenger), que manda
+  // el link como mensaje privado — nunca como publicación en el muro.
+  // Si el esquema no responde, probamos el share nativo del sistema y,
+  // como último recurso, el diálogo web de Facebook.
+  const shareFacebook = () => {
+    const deepLink = `fb-messenger://share?link=${encodeURIComponent(shareUrl)}&app_id=0`
+    tryDeepLink(deepLink, () => {
+      if (navigator.share) {
+        navigator.share({ title, text: title, url: shareUrl }).catch(() => {})
+      } else {
+        openWindow(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`)
+      }
+    })
+    requestClose()
+  }
 
-  // Instagram no tiene un intent web para compartir un link con texto,
-  // así que copiamos el enlace para que el usuario lo pegue en su historia/bio.
+  // Instagram no tiene un intent web propio, así que usamos el menú
+  // nativo de compartir del teléfono (el mismo de la galería): desde
+  // ahí, al elegir Instagram, el link llega directo al chat, como
+  // mensaje. Si el navegador no soporta compartir nativo, copiamos el
+  // enlace como respaldo.
   const shareInstagram = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, text: title, url: shareUrl })
+      } catch {
+        // el usuario canceló el menú nativo, no hacemos nada más
+      }
+      requestClose()
+      return
+    }
     try {
       await navigator.clipboard.writeText(shareUrl)
       setFeedback('instagram')
@@ -129,7 +197,7 @@ export function ShareButton({ title }: { title: string }) {
     <div className="share-wrap" ref={wrapRef}>
       <button
         type="button"
-        className="icon-button share-trigger"
+        className="icon-button icon-button-sm share-trigger"
         onClick={toggle}
         aria-haspopup="true"
         aria-expanded={state === 'open'}

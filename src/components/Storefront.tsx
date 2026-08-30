@@ -1,13 +1,46 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ArrowRight, Calendar, Check, Clock, Instagram, Menu, Minus, Music2, Plus, Scissors, Search, ShoppingBag, Sparkles, Trash2, X } from 'lucide-react'
 import { createAppointment, createOrder, type CartLine } from '@/lib/store'
 import { ShareButton } from './ShareButton'
+import { LeafBranch } from './LeafBranch'
 
 type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean }
 type Props = { data: { products: Product[]; content: Record<string, string> } }
 
 const money = (value: number) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(value / 100)
+
+/** Logotipo tipográfico de ELA: "Ela" en trazo cursivo + "esencia" en
+ * versalitas espaciadas debajo — sin insignia circular. */
+function BrandMark({ className = '' }: { className?: string }) {
+  return (
+    <span className={`brand-mark ${className}`}>
+      <span className="brand-mark-main">Ela</span>
+      <span className="brand-mark-sub">esencia</span>
+    </span>
+  )
+}
+
+/** Revela cada sección de la página con una animación de scroll que se
+ * repite en ambos sentidos: aparece (fade + sube) al entrar en
+ * pantalla y vuelve a ocultarse si sale de pantalla, ya sea bajando o
+ * subiendo hacia el navbar de nuevo. Se vuelve a ejecutar cuando
+ * cambia el contenido dinámico (filtros del catálogo) para observar
+ * los elementos nuevos que se agregan al DOM. */
+function useScrollReveal(deps: unknown[]) {
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) entry.target.classList.toggle('in-view', entry.isIntersecting)
+      },
+      { threshold: 0.15, rootMargin: '0px 0px -6% 0px' },
+    )
+    document.querySelectorAll('.reveal').forEach((element) => observer.observe(element))
+    return () => observer.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+}
 
 export function Storefront({ data }: Props) {
   const { products, content: copy } = data
@@ -84,20 +117,27 @@ export function Storefront({ data }: Props) {
 
   const todayIso = new Date().toISOString().slice(0, 10)
 
+  useScrollReveal([visibleProducts.length, category, query, services.length])
+
   return <div className="site-shell">
+    <div className="bg-leaf bg-leaf-left leaf-in" aria-hidden="true"><LeafBranch /></div>
+    <div className="bg-leaf bg-leaf-right leaf-in" aria-hidden="true"><LeafBranch /></div>
+
     <header className="topbar">
-      <button className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Abrir menú"><Menu /></button>
-      <a className="wordmark" href="#inicio"><span>E</span>{copy.brandName}</a>
+      <div className="topbar-left">
+        <button className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Abrir menú"><Menu /></button>
+        <ShareButton title={copy.brandName} />
+      </div>
+      <a className="wordmark" href="#inicio"><BrandMark /></a>
       <nav className="desktop-nav"><a href="#servicios">{copy.navServices}</a><a href="#catalogo">{copy.navCatalog}</a><a href="#beneficios">{copy.navBenefits}</a><a href="#contacto">{copy.navContact}</a></nav>
       <div className="topbar-actions">
-        <ShareButton title={copy.brandName} />
         <button className="cart-button" onClick={() => setCartOpen(true)}><ShoppingBag size={19} /><span>Bolsa</span><b>{cartCount}</b></button>
       </div>
     </header>
 
     <div className={`overlay ${menuOpen ? 'visible' : ''}`} onClick={() => setMenuOpen(false)} />
     <aside className={`side-menu ${menuOpen ? 'open' : ''}`}>
-      <div className="drawer-head"><span className="mini-mark">E</span><button className="icon-button" onClick={() => setMenuOpen(false)}><X /></button></div>
+      <div className="drawer-head"><BrandMark className="mini-mark" /><button className="icon-button" onClick={() => setMenuOpen(false)}><X /></button></div>
       <p className="drawer-kicker">Explora ELA</p>
       <a href="#servicios" onClick={() => setMenuOpen(false)}>Servicios <ArrowRight /></a>
       <a href="#catalogo" onClick={() => setMenuOpen(false)}>Productos <ArrowRight /></a>
@@ -118,14 +158,14 @@ export function Storefront({ data }: Props) {
       </section>
 
       <section className="ela-manifesto" id="beneficios">
-        <div className="ela-section-heading"><span>Nuestro compromiso</span><h2>{copy.benefitsTitle}</h2></div>
-        <div className="ela-manifesto-grid">{[1, 2, 3].map((number) => <article key={number}><span>0{number}</span><h3>{copy[`benefit${number}Title`]}</h3><p>{copy[`benefit${number}Text`]}</p></article>)}</div>
+        <div className="ela-section-heading reveal"><span>Nuestro compromiso</span><h2>{copy.benefitsTitle}</h2></div>
+        <div className="ela-manifesto-grid">{[1, 2, 3].map((number) => <article className={`reveal delay-${number}`} key={number}><span>0{number}</span><h3>{copy[`benefit${number}Title`]}</h3><p>{copy[`benefit${number}Text`]}</p></article>)}</div>
       </section>
 
       <section className="catalog services-section" id="servicios">
-        <div className="ela-section-heading"><span>Servicios de belleza</span><h2>{copy.servicesTitle}</h2><p>{copy.servicesDescription}</p></div>
+        <div className="ela-section-heading reveal"><span>Servicios de belleza</span><h2>{copy.servicesTitle}</h2><p>{copy.servicesDescription}</p></div>
         <div className="service-grid">
-          {services.map((service) => <article className="service-card" key={service.id}>
+          {services.map((service, index) => <article className={`service-card reveal delay-${(index % 3) + 1}`} key={service.id}>
             <div className="service-image"><img src={service.image} alt={service.name} /></div>
             <div className="service-info">
               <p className="product-category">{service.category}</p>
@@ -140,10 +180,10 @@ export function Storefront({ data }: Props) {
       </section>
 
       <section className="catalog" id="catalogo">
-        <div className="ela-section-heading"><span>Productos artesanales</span><h2>{copy.catalogTitle}</h2><p>{copy.catalogDescription}</p></div>
+        <div className="ela-section-heading reveal"><span>Productos artesanales</span><h2>{copy.catalogTitle}</h2><p>{copy.catalogDescription}</p></div>
         <div className="catalog-layout">
-          <aside className="filters"><label><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar producto..." /></label><div className="category-list">{categories.map((item) => <button className={category === item ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}<span>{item === 'Todos' ? goods.length : goods.filter((product) => product.category === item).length}</span></button>)}</div></aside>
-          <div className="product-list">{visibleProducts.map((product, index) => <article className="product-row" key={product.id}>
+          <aside className="filters reveal"><label><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar producto..." /></label><div className="category-list">{categories.map((item) => <button className={category === item ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}<span>{item === 'Todos' ? goods.length : goods.filter((product) => product.category === item).length}</span></button>)}</div></aside>
+          <div className="product-list">{visibleProducts.map((product, index) => <article className={`product-row reveal delay-${(index % 3) + 1}`} key={product.id}>
             <div className="product-number">{String(index + 1).padStart(2, '0')}</div>
             <div className="product-image"><img src={product.image} alt={product.name} />{product.stock === 0 && <span>Agotado</span>}</div>
             <div className="product-info"><p className="product-category">{product.category}</p><h3>{product.name}</h3><p>{product.description}</p><div className="stock-line"><span className={product.stock ? '' : 'empty'}>{product.stock ? `${product.stock} disponibles` : 'Sin existencias'}</span></div></div>
@@ -152,7 +192,7 @@ export function Storefront({ data }: Props) {
         </div>
       </section>
 
-      <section className="ela-story" id="historia">
+      <section className="ela-story reveal" id="historia">
         <span className="ela-eyebrow">Nuestra historia</span>
         <h2>{copy.storyTitle}</h2>
         <p>{copy.storyText}</p>
@@ -161,7 +201,7 @@ export function Storefront({ data }: Props) {
     </main>
 
     <footer id="contacto">
-      <div className="footer-brand"><div className="footer-mark">E</div><h2>{copy.brandName}</h2><p>{copy.footerText}</p></div>
+      <div className="footer-brand reveal"><BrandMark className="footer-mark" /><p>{copy.footerText}</p></div>
       <div><span>Conversemos</span><a className="whatsapp" href={`https://wa.me/${copy.whatsapp}`} target="_blank" rel="noreferrer">Pedidos y citas <ArrowRight /></a></div>
       <div><span>Horario</span><p>{copy.schedule}</p><p className="footer-location">{copy.location}</p></div>
       <div><span>Síguenos</span><a className="social-line" href={`https://instagram.com/${(copy.instagram || '').replace('@', '')}`} target="_blank" rel="noreferrer"><Instagram size={16} />{copy.instagram}</a><a className="social-line" href={`https://tiktok.com/${(copy.tiktok || '').replace('@', '@')}`} target="_blank" rel="noreferrer"><Music2 size={16} />{copy.tiktok}</a></div>
