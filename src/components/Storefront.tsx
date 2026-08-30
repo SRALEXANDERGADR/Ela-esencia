@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ArrowRight, Calendar, Check, Clock, Instagram, Menu, Minus, Music2, Plus, Scissors, Search, ShoppingBag, Sparkles, Trash2, X } from 'lucide-react'
 import { createAppointment, createOrder, type CartLine } from '@/lib/store'
+import { ShareButton } from './ShareButton'
 
 type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean }
 type Props = { data: { products: Product[]; content: Record<string, string> } }
@@ -88,7 +89,10 @@ export function Storefront({ data }: Props) {
       <button className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Abrir menú"><Menu /></button>
       <a className="wordmark" href="#inicio"><span>E</span>{copy.brandName}</a>
       <nav className="desktop-nav"><a href="#servicios">{copy.navServices}</a><a href="#catalogo">{copy.navCatalog}</a><a href="#beneficios">{copy.navBenefits}</a><a href="#contacto">{copy.navContact}</a></nav>
-      <button className="cart-button" onClick={() => setCartOpen(true)}><ShoppingBag size={19} /><span>Bolsa</span><b>{cartCount}</b></button>
+      <div className="topbar-actions">
+        <ShareButton title={copy.brandName} />
+        <button className="cart-button" onClick={() => setCartOpen(true)}><ShoppingBag size={19} /><span>Bolsa</span><b>{cartCount}</b></button>
+      </div>
     </header>
 
     <div className={`overlay ${menuOpen ? 'visible' : ''}`} onClick={() => setMenuOpen(false)} />
@@ -161,7 +165,16 @@ export function Storefront({ data }: Props) {
       <div><span>Conversemos</span><a className="whatsapp" href={`https://wa.me/${copy.whatsapp}`} target="_blank" rel="noreferrer">Pedidos y citas <ArrowRight /></a></div>
       <div><span>Horario</span><p>{copy.schedule}</p><p className="footer-location">{copy.location}</p></div>
       <div><span>Síguenos</span><a className="social-line" href={`https://instagram.com/${(copy.instagram || '').replace('@', '')}`} target="_blank" rel="noreferrer"><Instagram size={16} />{copy.instagram}</a><a className="social-line" href={`https://tiktok.com/${(copy.tiktok || '').replace('@', '@')}`} target="_blank" rel="noreferrer"><Music2 size={16} />{copy.tiktok}</a></div>
-      <div className="footer-bottom"><p>{copy.developerCredit}</p><p>© {new Date().getFullYear()} {copy.brandName} · <Link to="/politicas">Políticas</Link></p></div>
+      <div className="footer-bottom">
+        <a className="gadr-credit" href="https://gadrnet.com" target="_blank" rel="noopener noreferrer">
+          <span className="gadr-credit-text">{copy.developerCredit} · GADR Net | gadrnet.com</span>
+          <span className="gadr-mark" aria-hidden="true">
+            <span className="gadr-mark-icon">&lt;/&gt;<i /></span>
+            <span className="gadr-mark-word">GADR<small>Net</small></span>
+          </span>
+        </a>
+        <p>© {new Date().getFullYear()} {copy.brandName} · <Link to="/politicas">Políticas</Link></p>
+      </div>
     </footer>
 
     <div className={`overlay ${cartOpen ? 'visible' : ''}`} onClick={() => setCartOpen(false)} />
