@@ -207,7 +207,7 @@ export function Storefront({ data }: Props) {
       <div><span>Síguenos</span><a className="social-line" href={`https://instagram.com/${(copy.instagram || '').replace('@', '')}`} target="_blank" rel="noreferrer"><Instagram size={16} />{copy.instagram}</a><a className="social-line" href={`https://tiktok.com/${(copy.tiktok || '').replace('@', '@')}`} target="_blank" rel="noreferrer"><Music2 size={16} />{copy.tiktok}</a></div>
       <div className="footer-bottom">
         <a className="gadr-credit" href="https://gadrnet.com" target="_blank" rel="noopener noreferrer">
-          <span className="gadr-credit-text">{copy.developerCredit} · GADR Net | gadrnet.com</span>
+          <span className="gadr-credit-text">Diseño y desarrollo de la tienda: GADR Net | gadrnet.com</span>
           <span className="gadr-mark" aria-hidden="true">
             <span className="gadr-mark-icon">&lt;/&gt;<i /></span>
             <span className="gadr-mark-word">GADR<small>Net</small></span>
