@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.output/
+.vite/
+.wrangler/
+.dev.vars
+*.log
+.DS_Store
