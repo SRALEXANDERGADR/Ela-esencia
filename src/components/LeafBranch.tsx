@@ -129,3 +129,63 @@ export function LeafBloom() {
     </svg>
   )
 }
+
+/**
+ * Tercera especie decorativa: una "ramita" mucho más liviana, casi
+ * sin hojas, que en cambio va cargada de florecitas sueltas de
+ * distintos tamaños — para que no todos los bloques de la página
+ * repitan la misma silueta de LeafBranch/LeafBloom y haya variedad
+ * real ("flores... en el fondo") al recorrer la tienda de arriba a
+ * abajo.
+ */
+
+const SPRAY_LEAVES = [
+  { y: 620, x: 62, rotate: -30, scale: 0.75 },
+  { y: 430, x: 46, rotate: 34, scale: 0.65 },
+  { y: 230, x: 60, rotate: -28, scale: 0.55 },
+]
+
+const SPRAY_FLOWERS = [
+  { x: 56, y: 90, scale: 1.05, rotate: -10 },
+  { x: 38, y: 260, scale: 0.7, rotate: 18 },
+  { x: 66, y: 380, scale: 0.9, rotate: -16 },
+  { x: 42, y: 540, scale: 0.6, rotate: 12 },
+  { x: 60, y: 700, scale: 0.8, rotate: -6 },
+]
+
+const SPRAY_DOTS = [
+  { x: 46, y: 150, r: 2.6, vivid: true },
+  { x: 66, y: 320, r: 2.2, vivid: false },
+  { x: 40, y: 460, r: 2.4, vivid: true },
+  { x: 60, y: 630, r: 2, vivid: false },
+]
+
+export function LeafSpray() {
+  return (
+    <svg viewBox="0 0 120 780" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path
+        d="M56 20C46 140 68 230 48 350C30 470 62 560 44 680C34 730 50 750 46 770"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+        opacity=".7"
+      />
+      {SPRAY_LEAVES.map((leaf, index) => (
+        <path
+          key={index}
+          d={LEAF_PATH}
+          fill="currentColor"
+          opacity={0.4 + (index % 3) * 0.08}
+          transform={`translate(${leaf.x} ${leaf.y}) rotate(${leaf.rotate}) scale(${leaf.scale})`}
+        />
+      ))}
+      {SPRAY_FLOWERS.map((flower, index) => (
+        <Flower key={index} {...flower} />
+      ))}
+      {SPRAY_DOTS.map((dot, index) => (
+        <circle key={index} cx={dot.x} cy={dot.y} r={dot.r} fill={dot.vivid ? 'var(--gold-vivid)' : 'currentColor'} opacity={dot.vivid ? 0.85 : 0.5} />
+      ))}
+    </svg>
+  )
+}

@@ -47,7 +47,7 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 @media(prefers-reduced-motion:reduce){.topbar{animation:none!important}}
 .topbar-left{display:flex;align-items:center;gap:8px}
 .icon-button{width:44px;height:44px;border:1px solid var(--line);border-radius:50%;background:transparent;display:grid;place-items:center;cursor:pointer;flex-shrink:0}
-.icon-button:hover{background:var(--ink);color:var(--white);transform:rotate(4deg)}
+@media(hover:hover) and (pointer:fine){.icon-button:hover{background:var(--ink);color:var(--white);transform:rotate(4deg)}}
 .icon-button-sm{width:32px;height:32px}
 .desktop-nav{display:none}
 .cart-button{justify-self:end;border:0;background:transparent;display:flex;gap:8px;align-items:center;cursor:pointer}
@@ -61,7 +61,7 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 .brand-mark-main{font-family:var(--font-script);font-size:1.9em;font-weight:400;color:var(--ink)}
 .brand-mark-sub{font:500 .32em var(--font-mono);letter-spacing:.34em;text-transform:uppercase;color:var(--gold-dark);margin-top:2px}
 .wordmark{justify-self:center;text-decoration:none;font-size:30px;display:flex;align-items:center}
-.wordmark:hover .brand-mark-main{color:var(--gold-dark)}
+@media(hover:hover) and (pointer:fine){.wordmark:hover .brand-mark-main{color:var(--gold-dark)}}
 .mini-mark{font-size:22px}
 .mini-mark .brand-mark-sub{display:none}
 
@@ -73,30 +73,31 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 .share-popover.open{opacity:1;transform:scale(1) translateY(0);pointer-events:auto}
 .share-popover.closing{opacity:0;transform:scale(.85) translateY(-8px);pointer-events:none}
 .share-item{display:flex;align-items:center;gap:11px;width:100%;padding:9px 10px;border:0;background:transparent;border-radius:9px;cursor:pointer;font:500 13px var(--font-body);color:var(--ink);text-align:left}
-.share-item:hover{background:var(--paper)}
+@media(hover:hover) and (pointer:fine){.share-item:hover{background:var(--paper)}}
+.share-item:active{background:var(--paper)}
 .share-item.copied{color:var(--gold-dark)}
 .share-icon-badge{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex-shrink:0;color:white}
 .share-icon-badge.whatsapp{background:#25d366}
 .share-icon-badge.instagram{background:radial-gradient(circle at 30% 110%,#fdf497 0%,#fdf497 5%,#fd5949 45%,#d6249f 60%,#285aeb 90%)}
-.share-icon-badge.facebook{background:#1877f2}
+.share-icon-badge.messenger{background:linear-gradient(135deg,#00c6ff 0%,#0068ff 50%,#a033ff 100%)}
 .share-icon-badge.copy{background:var(--ink)}
 
 .ela-eyebrow,.drawer-kicker,.card-title span,.admin-main header span,.editor-top span,.product-modal>span,.invoice-summary,.invoice-modal .drawer-kicker{font:500 11px var(--font-mono);letter-spacing:.14em;text-transform:uppercase}
 .ela-eyebrow{display:flex;gap:9px;align-items:center;justify-content:center;color:var(--gold-dark)}
 .primary-button{display:inline-flex;align-items:center;justify-content:center;gap:24px;background:var(--gold-dark);color:white;border:0;text-decoration:none;padding:17px 26px;font-weight:600;cursor:pointer;border-radius:2px}
-.primary-button:hover{background:var(--ink);gap:32px}
+@media(hover:hover) and (pointer:fine){.primary-button:hover{background:var(--ink);gap:32px}}
 .primary-button svg{width:18px}.primary-button.full{width:100%}.primary-button:disabled{opacity:.45;cursor:not-allowed}
 
 /* Inicio — moderno y minimalista: todo centrado, mucho blanco, tipografía
    grande como protagonista, sin la composición partida en dos columnas
    que usan Ritual Cobre y Alexander. */
-.ela-hero{max-width:920px;margin:0 auto;padding:11vw 6vw 7vw;text-align:center;display:flex;flex-direction:column;align-items:center}
+.ela-hero{position:relative;max-width:920px;margin:0 auto;padding:11vw 6vw 7vw;text-align:center;display:flex;flex-direction:column;align-items:center}
 .ela-hero h1{font:600 clamp(44px,7.4vw,104px)/1.02 var(--font-display);letter-spacing:-.01em;margin:22px 0 20px;color:var(--ink)}
 .ela-hero-lede{font-size:18px;line-height:1.75;max-width:560px;color:#6b6152;margin:0 0 34px}
 .ela-hero-banner{width:100%;margin-top:8vw;aspect-ratio:16/8;overflow:hidden;background:#ece2cf}
 .ela-hero-banner img{width:100%;height:100%;object-fit:cover}
 
-.ela-manifesto{background:var(--white);padding:100px 7vw;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.ela-manifesto{position:relative;background:var(--white);padding:100px 7vw;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .ela-section-heading{text-align:center;max-width:640px;margin:0 auto 64px}
 .ela-section-heading span{display:block;font:500 11px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--gold-dark);margin-bottom:14px}
 .ela-section-heading h2{font:600 clamp(34px,4.2vw,54px)/1.08 var(--font-display);letter-spacing:0;margin:0;color:var(--ink)}
@@ -106,7 +107,7 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 .ela-manifesto-grid span{display:block;font:11px var(--font-mono);color:var(--gold-dark);margin-bottom:14px}
 .ela-manifesto-grid h3{font:600 22px var(--font-display);margin:0 0 10px;color:var(--ink)}
 .ela-manifesto-grid p{margin:0;color:var(--muted);line-height:1.7;font-size:14px}
-.catalog{padding:110px 5vw}
+.catalog{position:relative;padding:110px 5vw}
 .catalog-layout{display:grid;grid-template-columns:250px 1fr;gap:5vw}
 .filters{position:sticky;top:110px;height:max-content}
 .filters label{display:flex;border-bottom:1px solid var(--ink);align-items:center;gap:8px;padding-bottom:10px}
@@ -120,7 +121,7 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 .product-number{font:10px var(--font-mono);align-self:start}
 .product-image{height:210px;position:relative;overflow:hidden;background:#ece2cf}
 .product-image img{width:100%;height:100%;object-fit:cover;transition:.5s}
-.product-row:hover .product-image img{transform:scale(1.05)}
+@media(hover:hover) and (pointer:fine){.product-row:hover .product-image img{transform:scale(1.05)}}
 .product-image>span{position:absolute;inset:auto 0 0;background:var(--ink);color:white;padding:9px;text-align:center;font:10px var(--font-mono);text-transform:uppercase}
 .product-category{font:10px var(--font-mono)!important;text-transform:uppercase;color:var(--gold-dark)!important;letter-spacing:.12em}
 .product-info h3{font:600 27px var(--font-display);letter-spacing:0;margin:8px 0}
@@ -132,7 +133,7 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 .product-action{display:flex;height:100%;flex-direction:column;justify-content:space-between;align-items:flex-end}
 .product-action strong{font:600 20px var(--font-display)}
 .product-action button{border:0;border-bottom:1px solid;background:none;padding:8px 0;display:flex;align-items:center;gap:22px;cursor:pointer;font-weight:600}
-.product-action button:hover:not(:disabled){color:var(--gold-dark);gap:30px}
+@media(hover:hover) and (pointer:fine){.product-action button:hover:not(:disabled){color:var(--gold-dark);gap:30px}}
 .product-action button:disabled{opacity:.4}
 .product-action svg{width:16px}
 .empty-state,.empty-cart,.empty-admin{text-align:center;padding:70px 20px;color:var(--muted)}
@@ -152,14 +153,14 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 .service-info .product-action{flex-direction:row;align-items:center;justify-content:space-between;margin-top:8px}
 .service-info .product-action strong{font-size:14px}
 .service-info .product-action button{gap:6px;border:1px solid var(--gold-dark);padding:6px 10px;color:var(--gold-dark);font-size:11px}
-.service-info .product-action button:hover{background:var(--gold-dark);color:white;gap:8px}
+@media(hover:hover) and (pointer:fine){.service-info .product-action button:hover{background:var(--gold-dark);color:white;gap:8px}}
 
-.ela-story{max-width:760px;margin:0 auto;padding:9vw 6vw;text-align:center}
+.ela-story{position:relative;max-width:760px;margin:0 auto;padding:9vw 6vw;text-align:center}
 .ela-story h2{font:600 clamp(34px,4.6vw,54px)/1.1 var(--font-display);letter-spacing:0;margin:18px 0 20px;color:var(--ink)}
 .ela-story p{line-height:1.9;font-size:18px;color:#5b5142}
 .ela-story-signature{font:600 30px var(--font-display);margin-top:30px;color:var(--gold-dark)}
 
-footer{background:var(--ink);color:var(--white);display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:5vw;padding:80px 7vw 35px}
+footer{position:relative;background:var(--ink);color:var(--white);display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:5vw;padding:80px 7vw 35px}
 .footer-mark{font-size:44px}
 .footer-mark .brand-mark-main{color:var(--white)}
 .footer-mark .brand-mark-sub{color:var(--gold)}
@@ -172,13 +173,31 @@ footer>div>span{font:10px var(--font-mono);letter-spacing:.13em;text-transform:u
 .footer-bottom{grid-column:1/-1;border-top:1px solid rgba(255,255,255,.22);display:flex;justify-content:space-between;align-items:center;margin-top:30px;padding-top:15px;font-size:12px;gap:20px}
 .footer-bottom a{color:white}
 .gadr-credit{display:flex;flex-direction:column;align-items:center;gap:10px;text-decoration:none;color:#d8c9b2;text-align:center}
-.gadr-credit:hover{color:white}
+@media(hover:hover) and (pointer:fine){.gadr-credit:hover{color:white}}
 .gadr-credit-text{font-size:12px}
 .gadr-mark{display:flex;flex-direction:column;align-items:center;line-height:1;flex-shrink:0}
 .gadr-mark-icon{position:relative;font:700 15px/1 var(--font-mono);letter-spacing:-1px;color:#d8c9b2}
 .gadr-mark-icon i{position:absolute;top:-4px;right:-7px;width:4px;height:4px;border-radius:50%;background:var(--gold-dark)}
 .gadr-mark-word{display:block;font:800 12px/1 var(--font-display);letter-spacing:.14em;color:white;text-align:center;margin-top:2px}
 .gadr-mark-word small{display:block;font:600 7px var(--font-body);letter-spacing:.2em;color:#d8c9b2;margin-top:2px}
+
+/* Ramas decorativas por bloque — además de las 4 matas de las
+   esquinas de la página, cada sección importante (inicio, compromiso,
+   servicios, catálogo, historia, pie de página) tiene su propia
+   pareja de plantas, pegadas al borde lateral y centradas en la
+   altura de ESE bloque (no de toda la página). Van por detrás de las
+   tarjetas/contenido (son el primer hijo de la sección en el DOM, así
+   que el contenido posterior siempre se pinta encima) y nunca tapan
+   nada: solo se ven en el espacio libre alrededor de las tarjetas. */
+.block-sprig{position:absolute;top:50%;transform:translateY(-50%);width:clamp(34px,5.4vw,92px);height:clamp(150px,28vh,340px);pointer-events:none;z-index:0;color:var(--gold);opacity:.4;overflow:visible}
+.block-sprig svg{width:100%;height:100%;display:block}
+.block-sprig-left{left:0}
+.block-sprig-right{right:0}
+.block-sprig-right svg{transform:scaleX(-1)}
+footer .block-sprig{color:var(--gold)}
+@media(prefers-reduced-motion:reduce){.block-sprig{opacity:.32}}
+@media(max-width:1024px){.block-sprig{width:clamp(28px,5vw,64px);height:clamp(130px,24vh,260px);opacity:.32}}
+@media(max-width:620px){.block-sprig{width:clamp(18px,7vw,34px);height:clamp(110px,20vh,190px);opacity:.22}}
 
 .overlay{position:fixed;inset:0;background:rgba(20,16,10,.5);backdrop-filter:blur(4px);z-index:50;opacity:0;pointer-events:none}
 .overlay.visible{opacity:1;pointer-events:auto}

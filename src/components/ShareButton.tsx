@@ -15,17 +15,19 @@ import { useEffect, useRef, useState } from 'react'
  * Comportamiento de cada opción (todas comparten como MENSAJE, nunca
  * como publicación):
  * - WhatsApp: abre wa.me con el texto y el link ya armados para enviar.
- * - Facebook: intenta abrir la app de Facebook directo en modo "enviar"
- *   (fb-messenger://share), que manda el link como mensaje privado. Si
- *   la app no está instalada, cae de respaldo al share nativo del
- *   sistema (o al diálogo web de Facebook como último recurso).
- * - Instagram: en Android, dispara un Intent dirigido directamente al
- *   paquete de Instagram (com.instagram.android) para que abra su
- *   propio compositor de Direct con el link ya cargado — sin pasar por
- *   el selector nativo de apps del teléfono. En iOS y escritorio,
- *   Instagram no ofrece ese enlace directo, así que se usa el menú
- *   nativo de compartir (navigator.share) como alternativa más
- *   cercana; si el navegador no lo soporta, copia el enlace.
+ * - Messenger: intenta abrir la app de Messenger directo en modo
+ *   "enviar" (fb-messenger://share), que manda el link como mensaje
+ *   privado. Si la app no está instalada, cae de respaldo al share
+ *   nativo del sistema (o al diálogo web de Facebook como último
+ *   recurso).
+ * - Instagram: Instagram no tiene ningún enlace/intent público para
+ *   enviar texto directo a un chat (solo acepta imágenes/video por esa
+ *   vía), así que — tanto en Android como en iOS — usamos el menú
+ *   nativo de compartir del teléfono (navigator.share); desde ahí el
+ *   usuario elige Instagram y el link llega a su bandeja de Direct.
+ *   Antes se intentaba un Intent apuntado directo al paquete de
+ *   Instagram, pero como ese Intent nunca resuelve para texto plano,
+ *   Android caía en la Play Store — por eso se quitó.
  */
 
 // La duración de la animación (.45s) vive en la transición CSS de
@@ -49,9 +51,13 @@ const ShareIcon = () => (
   </svg>
 )
 
+// Glifo oficial del logo de WhatsApp (globo de diálogo + auricular),
+// dibujado en un viewBox cuadrado como el resto de los íconos del
+// menú para que se vea proporcionado dentro de la insignia circular
+// (el trazo anterior quedaba estirado/deformado en algunos tamaños).
 const WhatsAppIcon = () => (
-  <svg viewBox="0 0 32 32" width="17" height="17" fill="currentColor">
-    <path d="M16.02 3C9.4 3 4 8.4 4 15.02c0 2.22.6 4.32 1.66 6.12L3 29l8.06-2.62a12.9 12.9 0 0 0 4.96.98h.01C22.65 27.36 28 21.97 28 15.34 28 8.72 22.65 3 16.02 3Zm0 22.5c-1.66 0-3.28-.44-4.69-1.28l-.34-.2-4.79 1.56 1.57-4.67-.22-.36a10.35 10.35 0 0 1-1.59-5.53c0-5.72 4.66-10.38 10.38-10.38S26.4 9.3 26.4 15.02 21.74 25.5 16.02 25.5Zm5.68-7.77c-.31-.16-1.84-.91-2.12-1.01-.29-.1-.5-.16-.7.15-.21.32-.8 1.01-.98 1.21-.18.21-.36.23-.67.08-.31-.16-1.3-.48-2.48-1.53-.92-.82-1.53-1.83-1.72-2.14-.18-.32-.02-.49.14-.65.14-.14.31-.36.47-.55.16-.18.21-.31.31-.52.1-.21.05-.39-.03-.55-.08-.16-.7-1.68-.96-2.3-.25-.6-.51-.52-.7-.53h-.6c-.21 0-.55.08-.83.39-.29.32-1.09 1.06-1.09 2.59s1.12 3 1.27 3.21c.16.21 2.2 3.35 5.33 4.7.75.32 1.33.51 1.78.66.75.24 1.43.2 1.97.12.6-.09 1.84-.75 2.1-1.48.26-.72.26-1.34.18-1.47-.08-.13-.28-.21-.59-.37Z" />
+  <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor">
+    <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.85.5 3.58 1.4 5.07L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2Zm0 18.06a8.1 8.1 0 0 1-4.14-1.13l-.3-.18-3.12.82.83-3.04-.2-.31a8.1 8.1 0 0 1-1.25-4.31c0-4.5 3.66-8.16 8.18-8.16 4.5 0 8.16 3.66 8.16 8.16 0 4.51-3.66 8.15-8.16 8.15Zm4.48-6.13c-.24-.12-1.45-.72-1.68-.8-.22-.08-.39-.12-.56.12-.16.24-.63.8-.78.96-.14.16-.29.18-.53.06-.24-.12-1.03-.38-1.96-1.21-.72-.65-1.21-1.45-1.36-1.69-.14-.24-.02-.37.11-.49.11-.11.24-.29.36-.43.12-.14.16-.24.24-.4.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.42h-.48c-.16 0-.42.06-.65.31-.22.24-.85.83-.85 2.03s.87 2.36 1 2.52c.12.16 1.71 2.62 4.15 3.67.58.25 1.03.4 1.39.51.58.19 1.11.16 1.53.1.47-.07 1.45-.59 1.65-1.16.2-.57.2-1.05.14-1.15-.06-.1-.22-.16-.46-.29Z" />
   </svg>
 )
 
@@ -63,9 +69,13 @@ const InstagramIcon = () => (
   </svg>
 )
 
-const FacebookIcon = () => (
+// Ícono de Messenger (no de Facebook): la opción abre directo la app
+// de Messenger en modo "enviar" (fb-messenger://share), así que el
+// ícono y el texto deben corresponder a Messenger, no al logo de "f"
+// de Facebook.
+const MessengerIcon = () => (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-    <path d="M14.5 21.9v-7.86h2.64l.4-3.06H14.5V9c0-.89.25-1.49 1.52-1.49h1.62V4.77c-.28-.04-1.24-.12-2.36-.12-2.34 0-3.94 1.43-3.94 4.04v2.33H8.7v3.06h2.64v7.86h3.16Z" />
+    <path d="M12 2C6.48 2 2 6.15 2 11.26c0 2.91 1.44 5.51 3.7 7.21V22l3.38-1.86c.9.25 1.87.38 2.92.38 5.52 0 10-4.15 10-9.26C22 6.15 17.52 2 12 2Zm1.02 12.47-2.55-2.72-4.98 2.72 5.48-5.82 2.61 2.72 4.92-2.72-5.48 5.82Z" />
   </svg>
 )
 
@@ -146,12 +156,12 @@ export function ShareButton({ title }: { title: string }) {
     requestClose()
   }
 
-  // Facebook: el usuario ya tiene la app y su sesión iniciada, así que
-  // abrimos directo el modo "enviar" de Facebook (Messenger), que manda
-  // el link como mensaje privado — nunca como publicación en el muro.
-  // Si el esquema no responde, probamos el share nativo del sistema y,
-  // como último recurso, el diálogo web de Facebook.
-  const shareFacebook = () => {
+  // Messenger: el usuario ya tiene la app y su sesión iniciada, así
+  // que abrimos directo el modo "enviar" de Messenger, que manda el
+  // link como mensaje privado — nunca como publicación en el muro de
+  // Facebook. Si el esquema no responde, probamos el share nativo del
+  // sistema y, como último recurso, el diálogo web de Facebook.
+  const shareMessenger = () => {
     const deepLink = `fb-messenger://share?link=${encodeURIComponent(shareUrl)}&app_id=0`
     tryDeepLink(deepLink, () => {
       if (navigator.share) {
@@ -163,36 +173,16 @@ export function ShareButton({ title }: { title: string }) {
     requestClose()
   }
 
-  // Instagram: en Android podemos saltarnos el selector nativo del
-  // teléfono y apuntar el Intent directo al paquete de Instagram, para
-  // que abra su propio compositor de Direct con el link ya cargado.
-  // Esto se hace con un esquema "intent://" (soportado por Chrome en
-  // Android), que es como un enlace normal: si Instagram no está
-  // instalado, el propio sistema cae de respaldo a la Play Store, así
-  // que igual añadimos nuestro propio respaldo por si el intent no
-  // responde en absoluto (navegadores no-Chrome, o WebViews).
-  const isAndroid = () => /android/i.test(navigator.userAgent)
-
+  // Instagram: no existe ningún esquema/Intent público de Instagram
+  // que acepte texto plano (solo admite compartirle imagen/video por
+  // esa vía), así que apuntar un Intent de ACTION_SEND de texto contra
+  // com.instagram.android nunca resolvía — y por eso Android terminaba
+  // cayendo a la Play Store en vez de abrir la app. La forma confiable
+  // de "enviar como mensaje de Instagram", tanto en Android como en
+  // iOS, es el selector nativo de compartir del teléfono: ahí
+  // Instagram aparece como una opción y el link llega directo al chat
+  // elegido, como mensaje.
   const shareInstagram = async () => {
-    if (isAndroid()) {
-      const intentUrl =
-        `intent://send#Intent;` +
-        `action=android.intent.action.SEND;` +
-        `type=text/plain;` +
-        `package=com.instagram.android;` +
-        `S.android.intent.extra.TEXT=${encodeURIComponent(shareText)};` +
-        `end`
-      tryDeepLink(intentUrl, () => {
-        if (navigator.share) navigator.share({ title, text: title, url: shareUrl }).catch(() => {})
-      })
-      requestClose()
-      return
-    }
-    // iOS y escritorio: Instagram no tiene un intent propio para web,
-    // así que usamos el menú nativo de compartir del teléfono. Desde
-    // ahí, al elegir Instagram, el link llega directo al chat, como
-    // mensaje. Si el navegador no soporta compartir nativo, copiamos
-    // el enlace como respaldo.
     if (navigator.share) {
       try {
         await navigator.share({ title, text: title, url: shareUrl })
@@ -247,9 +237,9 @@ export function ShareButton({ title }: { title: string }) {
             <span className="share-icon-badge instagram"><InstagramIcon /></span>
             {feedback === 'instagram' ? 'Enlace copiado' : 'Instagram'}
           </button>
-          <button type="button" className="share-item" role="menuitem" onClick={shareFacebook}>
-            <span className="share-icon-badge facebook"><FacebookIcon /></span>
-            Facebook
+          <button type="button" className="share-item" role="menuitem" onClick={shareMessenger}>
+            <span className="share-icon-badge messenger"><MessengerIcon /></span>
+            Messenger
           </button>
           <button type="button" className={`share-item${feedback === 'link' ? ' copied' : ''}`} role="menuitem" onClick={copyLink}>
             <span className="share-icon-badge copy">{feedback === 'link' ? <CheckIcon /> : <LinkIcon />}</span>

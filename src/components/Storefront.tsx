@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { ArrowRight, Calendar, Check, Clock, Instagram, Menu, Minus, Music2, Plus, Scissors, Search, ShoppingBag, Sparkles, Trash2, X } from 'lucide-react'
 import { createAppointment, createOrder, type CartLine } from '@/lib/store'
 import { ShareButton } from './ShareButton'
-import { LeafBloom, LeafBranch } from './LeafBranch'
+import { LeafBloom, LeafBranch, LeafSpray } from './LeafBranch'
 
 /** Mueve suavemente las 4 matas decorativas de las esquinas con el
  * scroll (un "parallax" sutil), para que acompañen al usuario al subir
@@ -53,6 +53,20 @@ function BrandMark({ className = '' }: { className?: string }) {
       <span className="brand-mark-main">Ela</span>
       <span className="brand-mark-sub">esencia</span>
     </span>
+  )
+}
+
+/** Pareja de matas decorativas para UN bloque/sección de la página
+ * (no las 4 de las esquinas, que son fijas a todo el sitio). Van
+ * pegadas al centro del borde lateral izquierdo/derecho de ESA
+ * sección y, al ser los primeros hijos en el DOM, quedan siempre por
+ * detrás del contenido real (tarjetas, textos) que se agrega después. */
+function BlockSprig({ left: Left, right: Right }: { left: React.ComponentType; right: React.ComponentType }) {
+  return (
+    <>
+      <span className="block-sprig block-sprig-left" aria-hidden="true"><Left /></span>
+      <span className="block-sprig block-sprig-right" aria-hidden="true"><Right /></span>
+    </>
   )
 }
 
@@ -196,6 +210,7 @@ export function Storefront({ data }: Props) {
 
     <main>
       <section className="ela-hero" id="inicio">
+        <BlockSprig left={LeafBranch} right={LeafBloom} />
         <p className="ela-eyebrow reveal"><Sparkles size={14} />{copy.eyebrow}</p>
         <h1 className="reveal delay-1">{copy.heroTitle}</h1>
         <p className="ela-hero-lede reveal delay-1">{copy.heroDescription}</p>
@@ -204,11 +219,13 @@ export function Storefront({ data }: Props) {
       </section>
 
       <section className="ela-manifesto" id="beneficios">
+        <BlockSprig left={LeafSpray} right={LeafBranch} />
         <div className="ela-section-heading reveal"><span>Nuestro compromiso</span><h2>{copy.benefitsTitle}</h2></div>
         <div className="ela-manifesto-grid">{[1, 2, 3].map((number) => <article className={`reveal delay-${number}`} key={number}><span>0{number}</span><h3>{copy[`benefit${number}Title`]}</h3><p>{copy[`benefit${number}Text`]}</p></article>)}</div>
       </section>
 
       <section className="catalog services-section" id="servicios">
+        <BlockSprig left={LeafBloom} right={LeafSpray} />
         <div className="ela-section-heading reveal"><span>Servicios de belleza</span><h2>{copy.servicesTitle}</h2><p>{copy.servicesDescription}</p></div>
         <div className="service-grid">
           {services.map((service, index) => <article className={`service-card reveal delay-${(index % 3) + 1}`} key={service.id}>
@@ -226,6 +243,7 @@ export function Storefront({ data }: Props) {
       </section>
 
       <section className="catalog" id="catalogo">
+        <BlockSprig left={LeafBranch} right={LeafBloom} />
         <div className="ela-section-heading reveal"><span>Productos artesanales</span><h2>{copy.catalogTitle}</h2><p>{copy.catalogDescription}</p></div>
         <div className="catalog-layout">
           <aside className="filters reveal"><label><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar producto..." /></label><div className="category-list">{categories.map((item) => <button className={category === item ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}<span>{item === 'Todos' ? goods.length : goods.filter((product) => product.category === item).length}</span></button>)}</div></aside>
@@ -239,6 +257,7 @@ export function Storefront({ data }: Props) {
       </section>
 
       <section className="ela-story reveal" id="historia">
+        <BlockSprig left={LeafSpray} right={LeafSpray} />
         <span className="ela-eyebrow">Nuestra historia</span>
         <h2>{copy.storyTitle}</h2>
         <p>{copy.storyText}</p>
@@ -247,11 +266,12 @@ export function Storefront({ data }: Props) {
     </main>
 
     <footer id="contacto">
+      <BlockSprig left={LeafBranch} right={LeafBloom} />
       <div className="footer-brand reveal"><BrandMark className="footer-mark" /><p>{copy.footerText}</p></div>
-      <div><span>Conversemos</span><a className="whatsapp" href={`https://wa.me/${copy.whatsapp}`} target="_blank" rel="noreferrer">Pedidos y citas <ArrowRight /></a></div>
-      <div><span>Horario</span><p>{copy.schedule}</p><p className="footer-location">{copy.location}</p></div>
-      <div><span>Síguenos</span><a className="social-line" href={`https://instagram.com/${(copy.instagram || '').replace('@', '')}`} target="_blank" rel="noreferrer"><Instagram size={16} />{copy.instagram}</a><a className="social-line" href={`https://tiktok.com/${(copy.tiktok || '').replace('@', '@')}`} target="_blank" rel="noreferrer"><Music2 size={16} />{copy.tiktok}</a></div>
-      <div className="footer-bottom">
+      <div className="reveal delay-1"><span>Conversemos</span><a className="whatsapp" href={`https://wa.me/${copy.whatsapp}`} target="_blank" rel="noreferrer">Pedidos y citas <ArrowRight /></a></div>
+      <div className="reveal delay-2"><span>Horario</span><p>{copy.schedule}</p><p className="footer-location">{copy.location}</p></div>
+      <div className="reveal delay-3"><span>Síguenos</span><a className="social-line" href={`https://instagram.com/${(copy.instagram || '').replace('@', '')}`} target="_blank" rel="noreferrer"><Instagram size={16} />{copy.instagram}</a><a className="social-line" href={`https://tiktok.com/${(copy.tiktok || '').replace('@', '@')}`} target="_blank" rel="noreferrer"><Music2 size={16} />{copy.tiktok}</a></div>
+      <div className="footer-bottom reveal">
         <a className="gadr-credit" href="https://gadrnet.com" target="_blank" rel="noopener noreferrer">
           <span className="gadr-credit-text">Diseño y desarrollo de la tienda: GADR Net | gadrnet.com</span>
           <span className="gadr-mark" aria-hidden="true">
