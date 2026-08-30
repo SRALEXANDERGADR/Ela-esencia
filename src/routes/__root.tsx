@@ -32,6 +32,26 @@ export const Route = createRootRoute({
         content: 'website',
       },
       {
+        property: 'og:url',
+        content: 'https://gadrnet.workers.dev/',
+      },
+      {
+        property: 'og:image',
+        content: 'https://gadrnet.workers.dev/og-cover.jpg',
+      },
+      {
+        property: 'og:image:width',
+        content: '1200',
+      },
+      {
+        property: 'og:image:height',
+        content: '630',
+      },
+      {
+        property: 'og:image:alt',
+        content: 'ELA — La belleza de ser tú.',
+      },
+      {
         name: 'twitter:card',
         content: 'summary_large_image',
       },
@@ -42,6 +62,10 @@ export const Route = createRootRoute({
       {
         name: 'twitter:description',
         content: 'Belleza, cuidado y bienestar: servicios de cejas y pestañas, y productos artesanales hechos a mano.',
+      },
+      {
+        name: 'twitter:image',
+        content: 'https://gadrnet.workers.dev/og-cover.jpg',
       },
     ],
   }),
