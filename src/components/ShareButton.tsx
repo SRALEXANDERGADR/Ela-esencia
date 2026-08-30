@@ -3,11 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 /**
  * Botón de compartir para el navbar.
  * - Abre un popover tipo "speech bubble" (con caret apuntando al botón).
- * - Nace visualmente desde el botón (transform-origin) con fade-in + scale-up,
- *   con una animación deliberadamente pausada (1.3s) para que se note.
+ * - Nace visualmente desde el botón (transform-origin) con fade-in + scale-up.
  * - Se cierra con fade-out + scale-down al hacer click afuera, presionar
  *   Escape, o elegir una opción — y recién después de la animación se
- *   desmonta del DOM (no hay "salto" abrupto).
+ *   desmonta del DOM (no hay "salto" abrupto). Abrir y cerrar comparten
+ *   exactamente la misma transición CSS (misma duración y curva en
+ *   ambos sentidos, igual que el menú lateral / carrito), así que el
+ *   cierre se ve como el "reverso" exacto de la apertura, a la misma
+ *   velocidad.
  *
  * Comportamiento de cada opción (todas comparten como MENSAJE, nunca
  * como publicación):
@@ -16,17 +19,21 @@ import { useEffect, useRef, useState } from 'react'
  *   (fb-messenger://share), que manda el link como mensaje privado. Si
  *   la app no está instalada, cae de respaldo al share nativo del
  *   sistema (o al diálogo web de Facebook como último recurso).
- * - Instagram: abre el menú nativo de compartir del teléfono
- *   (navigator.share), que en Instagram entrega el link directo al
- *   chat, como mensaje. Si el navegador no soporta share nativo, copia
- *   el enlace como respaldo.
+ * - Instagram: en Android, dispara un Intent dirigido directamente al
+ *   paquete de Instagram (com.instagram.android) para que abra su
+ *   propio compositor de Direct con el link ya cargado — sin pasar por
+ *   el selector nativo de apps del teléfono. En iOS y escritorio,
+ *   Instagram no ofrece ese enlace directo, así que se usa el menú
+ *   nativo de compartir (navigator.share) como alternativa más
+ *   cercana; si el navegador no lo soporta, copia el enlace.
  */
 
-// La duración de la animación (1.3s) vive en la transición CSS de
-// .share-popover (styles.css). Esta constante solo controla cuándo se
-// desmonta el popover del DOM una vez termina la animación de cierre,
-// y debe coincidir con esa misma duración.
-const CLOSE_ANIMATION_MS = 1300
+// La duración de la animación (.45s) vive en la transición CSS de
+// .share-popover (styles.css) y es la misma que usa el menú lateral y
+// el carrito. Esta constante solo controla cuándo se desmonta el
+// popover del DOM una vez termina la animación de cierre, y debe
+// coincidir con esa misma duración.
+const CLOSE_ANIMATION_MS = 450
 const DEEP_LINK_FALLBACK_MS = 1600
 
 type PopoverState = 'closed' | 'open' | 'closing'
@@ -156,12 +163,36 @@ export function ShareButton({ title }: { title: string }) {
     requestClose()
   }
 
-  // Instagram no tiene un intent web propio, así que usamos el menú
-  // nativo de compartir del teléfono (el mismo de la galería): desde
-  // ahí, al elegir Instagram, el link llega directo al chat, como
-  // mensaje. Si el navegador no soporta compartir nativo, copiamos el
-  // enlace como respaldo.
+  // Instagram: en Android podemos saltarnos el selector nativo del
+  // teléfono y apuntar el Intent directo al paquete de Instagram, para
+  // que abra su propio compositor de Direct con el link ya cargado.
+  // Esto se hace con un esquema "intent://" (soportado por Chrome en
+  // Android), que es como un enlace normal: si Instagram no está
+  // instalado, el propio sistema cae de respaldo a la Play Store, así
+  // que igual añadimos nuestro propio respaldo por si el intent no
+  // responde en absoluto (navegadores no-Chrome, o WebViews).
+  const isAndroid = () => /android/i.test(navigator.userAgent)
+
   const shareInstagram = async () => {
+    if (isAndroid()) {
+      const intentUrl =
+        `intent://send#Intent;` +
+        `action=android.intent.action.SEND;` +
+        `type=text/plain;` +
+        `package=com.instagram.android;` +
+        `S.android.intent.extra.TEXT=${encodeURIComponent(shareText)};` +
+        `end`
+      tryDeepLink(intentUrl, () => {
+        if (navigator.share) navigator.share({ title, text: title, url: shareUrl }).catch(() => {})
+      })
+      requestClose()
+      return
+    }
+    // iOS y escritorio: Instagram no tiene un intent propio para web,
+    // así que usamos el menú nativo de compartir del teléfono. Desde
+    // ahí, al elegir Instagram, el link llega directo al chat, como
+    // mensaje. Si el navegador no soporta compartir nativo, copiamos
+    // el enlace como respaldo.
     if (navigator.share) {
       try {
         await navigator.share({ title, text: title, url: shareUrl })

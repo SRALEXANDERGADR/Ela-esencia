@@ -1,9 +1,44 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ArrowRight, Calendar, Check, Clock, Instagram, Menu, Minus, Music2, Plus, Scissors, Search, ShoppingBag, Sparkles, Trash2, X } from 'lucide-react'
 import { createAppointment, createOrder, type CartLine } from '@/lib/store'
 import { ShareButton } from './ShareButton'
-import { LeafBranch } from './LeafBranch'
+import { LeafBloom, LeafBranch } from './LeafBranch'
+
+/** Mueve suavemente las 4 matas decorativas de las esquinas con el
+ * scroll (un "parallax" sutil), para que acompañen al usuario al subir
+ * o bajar la página en vez de quedar estáticas. Cada una se mueve a su
+ * propio ritmo y con signo alternado, con un tope para que nunca se
+ * alejen demasiado de su rincón. Se desactiva por completo si el
+ * usuario prefiere menos movimiento. */
+function useLeafParallax() {
+  const refs = useRef<(HTMLDivElement | null)[]>([])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const factors = [0.05, -0.045, 0.045, -0.05]
+    let frame = 0
+    const apply = () => {
+      const y = window.scrollY
+      refs.current.forEach((el, index) => {
+        if (!el) return
+        const shift = Math.max(-70, Math.min(70, y * factors[index]))
+        el.style.transform = `translateY(${shift}px)`
+      })
+      frame = 0
+    }
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(apply)
+    }
+    apply()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [])
+  return refs
+}
 
 type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean }
 type Props = { data: { products: Product[]; content: Record<string, string> } }
@@ -118,10 +153,21 @@ export function Storefront({ data }: Props) {
   const todayIso = new Date().toISOString().slice(0, 10)
 
   useScrollReveal([visibleProducts.length, category, query, services.length])
+  const leafRefs = useLeafParallax()
 
   return <div className="site-shell">
-    <div className="bg-leaf bg-leaf-left leaf-in" aria-hidden="true"><LeafBranch /></div>
-    <div className="bg-leaf bg-leaf-right leaf-in" aria-hidden="true"><LeafBranch /></div>
+    <div className="bg-leaf bg-leaf-left-top leaf-in" aria-hidden="true">
+      <div className="bg-leaf-inner" ref={(el) => { leafRefs.current[0] = el }}><LeafBranch /></div>
+    </div>
+    <div className="bg-leaf bg-leaf-left-bottom leaf-in" aria-hidden="true">
+      <div className="bg-leaf-inner" ref={(el) => { leafRefs.current[1] = el }}><LeafBloom /></div>
+    </div>
+    <div className="bg-leaf bg-leaf-right-top leaf-in" aria-hidden="true">
+      <div className="bg-leaf-inner" ref={(el) => { leafRefs.current[2] = el }}><LeafBloom /></div>
+    </div>
+    <div className="bg-leaf bg-leaf-right-bottom leaf-in" aria-hidden="true">
+      <div className="bg-leaf-inner" ref={(el) => { leafRefs.current[3] = el }}><LeafBranch /></div>
+    </div>
 
     <header className="topbar">
       <div className="topbar-left">
