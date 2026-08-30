@@ -33,11 +33,11 @@ export const Route = createRootRoute({
       },
       {
         property: 'og:url',
-        content: 'https://gadrnet.workers.dev/',
+        content: 'https://elaesencia.gadrnet.workers.dev/',
       },
       {
         property: 'og:image',
-        content: 'https://gadrnet.workers.dev/og-cover.jpg',
+        content: 'https://elaesencia.gadrnet.workers.dev/og-cover.jpg',
       },
       {
         property: 'og:image:width',
@@ -65,7 +65,7 @@ export const Route = createRootRoute({
       },
       {
         name: 'twitter:image',
-        content: 'https://gadrnet.workers.dev/og-cover.jpg',
+        content: 'https://elaesencia.gadrnet.workers.dev/og-cover.jpg',
       },
     ],
     links: [
