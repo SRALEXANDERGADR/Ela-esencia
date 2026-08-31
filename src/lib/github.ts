@@ -48,3 +48,50 @@ export async function uploadImage(
   if (!downloadUrl) throw new Error('GitHub no devolvió la URL pública de la imagen.')
   return downloadUrl
 }
+
+// Reconstruye la ruta dentro del repo (ej. "public/uploads/123-jabon.jpg")
+// a partir de una download_url de raw.githubusercontent.com. Devuelve null
+// si la URL no pertenece al repo configurado (ej. imágenes de Unsplash de
+// la semilla inicial), para no intentar borrar algo que no subimos nosotros.
+export function pathFromDownloadUrl(env: Env, url: string): string | null {
+  if (!env.GITHUB_REPO) return null
+  const branch = env.GITHUB_BRANCH || 'main'
+  const prefix = `https://raw.githubusercontent.com/${env.GITHUB_REPO}/${branch}/`
+  if (!url.startsWith(prefix)) return null
+  return url.slice(prefix.length)
+}
+
+// Borra definitivamente un archivo del repo de GitHub. La API de Contents
+// exige el `sha` actual del archivo, así que primero se consulta con GET.
+// Si el archivo ya no existe (404), se considera éxito silencioso: el
+// objetivo (que no exista en el repo) ya se cumple igual.
+export async function deleteImageFile(env: Env, path: string): Promise<void> {
+  if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) {
+    throw new Error('La papelera de imágenes no está configurada. Define GITHUB_TOKEN y GITHUB_REPO en el servidor.')
+  }
+  const branch = env.GITHUB_BRANCH || 'main'
+  const headers = {
+    Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+    'User-Agent': 'ela-esencia-app',
+    Accept: 'application/vnd.github+json',
+  }
+
+  const infoResponse = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/contents/${path}?ref=${branch}`, { headers })
+  if (infoResponse.status === 404) return // ya no existe: nada que borrar
+  if (!infoResponse.ok) {
+    const detail = await infoResponse.text()
+    throw new Error(`No pudimos consultar la imagen en GitHub (${infoResponse.status}). ${detail.slice(0, 200)}`)
+  }
+  const info = (await infoResponse.json()) as { sha?: string }
+  if (!info.sha) return
+
+  const deleteResponse = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/contents/${path}`, {
+    method: 'DELETE',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: `Elimina imagen de la papelera: ${path}`, sha: info.sha, branch }),
+  })
+  if (!deleteResponse.ok && deleteResponse.status !== 404) {
+    const detail = await deleteResponse.text()
+    throw new Error(`No pudimos borrar la imagen en GitHub (${deleteResponse.status}). ${detail.slice(0, 200)}`)
+  }
+}

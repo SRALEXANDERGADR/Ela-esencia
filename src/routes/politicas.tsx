@@ -10,7 +10,7 @@ function Policies() {
       <div className="policies-title">
         <span>ELA · INFORMACIÓN LEGAL</span>
         <h1>Políticas claras,<br />relaciones tranquilas.</h1>
-        <p>Última actualización: 28 de agosto de 2026</p>
+        <p>Última actualización: 31 de agosto de 2026</p>
       </div>
       <div className="policy-grid">
         <article>
@@ -35,8 +35,13 @@ function Policies() {
         </article>
         <article>
           <span>05</span>
+          <h2>Conservación y eliminación de datos</h2>
+          <p>Los datos de catálogo, clientes, pedidos y citas que eliminamos internamente pasan primero por una papelera temporal (30 días) antes de borrarse en definitiva; las facturas y demás comprobantes de pago no siguen esta regla: se conservan siempre y solo pueden anularse, nunca borrarse, para mantener un historial financiero verificable. Si necesitas una copia de una factura o de tu información, puedes solicitarla.</p>
+        </article>
+        <article>
+          <span>06</span>
           <h2>Contacto</h2>
-          <p>Para consultas sobre privacidad, pedidos, citas o devoluciones, utiliza el botón de WhatsApp de la tienda. Respondemos de lunes a sábado, previa cita.</p>
+          <p>Para consultas sobre privacidad, pedidos, citas o devoluciones, utiliza el botón de WhatsApp de la tienda. Respondemos de lunes a sábado, previa cita. Consulta también nuestros <Link to="/terminos">Términos y condiciones</Link>.</p>
         </article>
       </div>
     </main>

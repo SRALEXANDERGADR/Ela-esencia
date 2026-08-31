@@ -108,7 +108,8 @@ function buildInvoiceHtml(invoice: InvoiceLike): string {
       </table>
 
       <div style="border-top:1px solid #eee2cf;padding-top:16px;font-size:11px;color:#a99a84;text-align:center;">
-        Gracias por confiar en ELA. Documento generado automáticamente y sin firma requerida.
+        Gracias por confiar en ELA. Documento generado automáticamente y sin firma requerida.<br>
+        Este documento se conserva en nuestro sistema. Si necesitas una copia o información relacionada con esta factura, puedes contactarnos.
       </div>
     </div>`
 }

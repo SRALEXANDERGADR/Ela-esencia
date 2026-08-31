@@ -20,6 +20,10 @@ export const products = pgTable('products', {
   featured: boolean('featured').notNull().default(false),
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  // Papelera: NULL = visible normalmente. Con fecha = enviado a la
+  // papelera; se restaura poniendo esto en NULL de nuevo, o se elimina
+  // definitivamente (junto a su imagen) 30 días después de esta fecha.
+  deletedAt: timestamp('deleted_at'),
 })
 
 // ───────────────────────────────────────────────────────────────────────
@@ -33,6 +37,7 @@ export const customers = pgTable('customers', {
   address: text('address').notNull().default(''),
   notes: text('notes').notNull().default(''),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at'), // papelera, igual que products
 })
 
 // ───────────────────────────────────────────────────────────────────────
@@ -51,6 +56,7 @@ export const orders = pgTable('orders', {
   status: text('status').notNull().default('Pendiente'), // Pendiente, Preparando, Enviado, Entregado, Cancelado
   paymentStatus: text('payment_status').notNull().default('Pendiente'), // Pendiente, Pagado, Reembolsado
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at'), // papelera
 })
 
 // ───────────────────────────────────────────────────────────────────────
@@ -72,12 +78,18 @@ export const appointments = pgTable('appointments', {
   status: text('status').notNull().default('Pendiente'), // Pendiente, Confirmada, Completada, Cancelada
   paymentStatus: text('payment_status').notNull().default('Pendiente'), // Pendiente, Pagado, Reembolsado
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at'), // papelera
 })
 
 // ───────────────────────────────────────────────────────────────────────
 // FACTURAS — un documento formal ligado a un pedido o una cita, que
 // permite registrar abonos parciales (saldo pendiente) igual que en
 // Alexander Perfiles/Ventas. El folio se genera al crearla.
+//
+// A propósito NO tiene `deletedAt`/papelera: una factura emitida es un
+// registro financiero y se conserva siempre. "Eliminar" una factura desde
+// el panel en realidad la marca como `status = 'Cancelada'`, nunca la
+// borra físicamente. Ver `cancelInvoice` en src/lib/store.ts.
 // ───────────────────────────────────────────────────────────────────────
 export const invoices = pgTable('invoices', {
   id: serial('id').primaryKey(),
@@ -106,6 +118,23 @@ export const payments = pgTable('payments', {
   method: text('method').notNull().default('Efectivo'), // Efectivo, Transferencia, Tarjeta
   note: text('note').notNull().default(''),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+})
+
+// ───────────────────────────────────────────────────────────────────────
+// PAPELERA DE IMÁGENES — cuando se reemplaza o se elimina definitivamente
+// la imagen de un producto/servicio, la imagen anterior (que vive en el
+// repo de GitHub, no en la base de datos) no se borra de inmediato: se
+// registra aquí con la ruta que tenía en el repo. 30 días después de
+// `deletedAt`, un job de limpieza la borra de GitHub de verdad y quita
+// esta fila. Así el repo no acumula archivos huérfanos, pero hay margen
+// para recuperar una imagen borrada por error.
+// ───────────────────────────────────────────────────────────────────────
+export const imageTrash = pgTable('image_trash', {
+  id: serial('id').primaryKey(),
+  path: text('path').notNull(), // ruta dentro del repo, ej. public/uploads/123-jabon.jpg
+  url: text('url').notNull(), // download_url original (raw.githubusercontent.com/...)
+  reason: text('reason').notNull().default(''), // ej. 'imagen reemplazada', 'producto eliminado'
+  deletedAt: timestamp('deleted_at').notNull().defaultNow(),
 })
 
 // ───────────────────────────────────────────────────────────────────────

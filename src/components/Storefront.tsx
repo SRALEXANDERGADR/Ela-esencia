@@ -205,6 +205,7 @@ export function Storefront({ data }: Props) {
       <a href="#historia" onClick={() => setMenuOpen(false)}>Nuestra historia <ArrowRight /></a>
       <a href="#contacto" onClick={() => setMenuOpen(false)}>Contacto <ArrowRight /></a>
       <Link to="/politicas" onClick={() => setMenuOpen(false)}>Políticas <ArrowRight /></Link>
+      <Link to="/terminos" onClick={() => setMenuOpen(false)}>Términos y condiciones <ArrowRight /></Link>
       <div className="drawer-admin"><span>Área privada</span><Link to="/admin">Entrar al panel administrativo</Link></div>
     </aside>
 
@@ -279,7 +280,7 @@ export function Storefront({ data }: Props) {
             <span className="gadr-mark-word">GADR<small>Net</small></span>
           </span>
         </a>
-        <p>© {new Date().getFullYear()} {copy.brandName} · <Link to="/politicas">Políticas</Link></p>
+        <p>© {new Date().getFullYear()} {copy.brandName} · <Link to="/politicas">Políticas</Link> · <Link to="/terminos">Términos y condiciones</Link></p>
       </div>
     </footer>
 
