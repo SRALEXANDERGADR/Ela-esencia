@@ -7,7 +7,7 @@ import { compressImage } from '@/lib/image'
 import { formatMoney } from '@/lib/money'
 import { fromBase64Url } from '@/lib/push'
 
-type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; cost: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
+type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; cost: number; stock: number; durationMinutes: number; image: string; images: string[]; featured: boolean; active: boolean }
 type Purchase = { id: number; productId: number; productName: string; fund: string; quantity: number; unitCost: number; totalCost: number; remainingQuantity: number; notes: string; createdAt: string | Date }
 type Expense = { id: number; type: string; description: string; amount: number; createdAt: string | Date }
 type Order = { id: number; orderNumber: string; customerId: number | null; customerName: string; email: string; phone: string; address: string; total: number; status: string; paymentStatus: string; items: Array<{ id: number; name: string; price: number; quantity: number; cost?: number; reinvCost?: number; reinvQty?: number }>; createdAt: string | Date }
@@ -29,7 +29,7 @@ type AdminData = { products: Product[]; orders: Order[]; appointments: Appointme
 type Tab = 'resumen' | 'citas' | 'pedidos' | 'facturas' | 'catalogo' | 'finanzas' | 'clientes' | 'contenido' | 'app' | 'papelera'
 const TAB_IDS: Tab[] = ['resumen', 'citas', 'pedidos', 'facturas', 'catalogo', 'finanzas', 'clientes', 'contenido', 'app', 'papelera']
 type CustomerDraft = { id?: number; name: string; email: string; phone: string; address: string; notes: string }
-type ProductDraft = { id?: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
+type ProductDraft = { id?: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; stock: number; durationMinutes: number; image: string; images: string[]; featured: boolean; active: boolean }
 type Fund = 'capital' | 'reinversion'
 type PurchaseDraft = { productId: string; quantity: string; unitCost: string; fund: Fund; notes: string }
 type SaleLine = { productId: string; quantity: string; price: string }
@@ -79,7 +79,7 @@ const waLink = (phone: string, text = '') => {
   return `https://wa.me/${digits}${text ? `?text=${encodeURIComponent(text)}` : ''}`
 }
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches' }
-const blankProduct = (kind = 'servicio'): ProductDraft => ({ kind, name: '', category: '', description: '', price: 0, originalPrice: 0, stock: 0, durationMinutes: 30, image: '', featured: false, active: true })
+const blankProduct = (kind = 'servicio'): ProductDraft => ({ kind, name: '', category: '', description: '', price: 0, originalPrice: 0, images: [], stock: 0, durationMinutes: 30, image: '', featured: false, active: true })
 const blankCustomer: CustomerDraft = { name: '', email: '', phone: '', address: '', notes: '' }
 const ORDER_STATUSES = ['Pendiente', 'Preparando', 'Enviado', 'Entregado', 'Cancelado']
 const APPOINTMENT_STATUSES = ['Pendiente', 'Confirmada', 'Completada', 'Cancelada']
@@ -331,6 +331,8 @@ export function AdminPanel() {
   const [uploading, setUploading] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [editing, setEditing] = useState<ProductDraft | null>(null)
+  const editingRef = useRef<ProductDraft | null>(null)
+  editingRef.current = editing
   const [editingCustomer, setEditingCustomer] = useState<CustomerDraft | null>(null)
   const [bookingDraft, setBookingDraft] = useState<AppointmentDraft | null>(null)
   const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null)
@@ -612,18 +614,47 @@ export function AdminPanel() {
     return order ? { ...invoice, lines: order.items } : invoice
   }
 
+  async function uploadOne(file: File) {
+    const compressed = await compressImage(file)
+    const body = new FormData(); body.append('file', compressed)
+    const response = await fetch('/api/upload', { method: 'POST', body })
+    const result = await response.json() as { url?: string; error?: string }
+    if (!response.ok || !result.url) throw new Error(result.error || 'No pudimos subir la imagen.')
+    return result.url
+  }
+
   async function uploadImage(file: File, target: 'product' | 'hero') {
     setUploading(true); setError('')
     try {
-      const compressed = await compressImage(file)
-      const body = new FormData(); body.append('file', compressed)
-      const response = await fetch('/api/upload', { method: 'POST', body })
-      const result = await response.json() as { url?: string; error?: string }
-      if (!response.ok || !result.url) throw new Error(result.error || 'No pudimos subir la imagen.')
-      if (target === 'product') setEditing((current) => current ? { ...current, image: result.url! } : current)
-      else { setContentDraft((current) => ({ ...current, heroImage: result.url! })); setContentDirty(true) }
+      const url = await uploadOne(file)
+      if (target === 'product') setEditing((current) => current ? { ...current, image: url } : current)
+      else { setContentDraft((current) => ({ ...current, heroImage: url })); setContentDirty(true) }
       notify('Imagen subida.')
     } catch (caught) { const message = errorText(caught, 'No pudimos subir la imagen.'); if (target === 'product') setError(message); else notify(message, 'error') }
+    finally { setUploading(false) }
+  }
+
+  /** Sube varias fotos de una vez a la galería del artículo (la primera,
+   * si no había foto principal, pasa a ser la principal). Máximo 11 fotos. */
+  async function uploadGallery(files: FileList) {
+    setUploading(true); setError('')
+    let added = 0
+    try {
+      for (const file of Array.from(files)) {
+        const current = editingRef.current
+        if (!current) break
+        if ((current.image ? 1 : 0) + current.images.length >= 11) { setError('Máximo 11 fotos por artículo.'); break }
+        const url = await uploadOne(file)
+        setEditing((draft) => {
+          if (!draft) return draft
+          const next = !draft.image ? { ...draft, image: url } : { ...draft, images: [...draft.images, url] }
+          editingRef.current = next
+          return next
+        })
+        added += 1
+      }
+      if (added) notify(added === 1 ? 'Foto agregada.' : `${added} fotos agregadas.`)
+    } catch (caught) { setError(errorText(caught, 'No pudimos subir una de las fotos.')) }
     finally { setUploading(false) }
   }
 
@@ -879,8 +910,8 @@ export function AdminPanel() {
         {catalogKind === 'producto' && chipsCatalog()}
         {catalogKind === 'producto' && uncostedProducts.length > 0 && catalogFilter !== 'sincosto' && <div className="admin-notice"><AlertTriangle size={16} /><div>{uncostedProducts.length === 1 ? '1 producto tiene' : `${uncostedProducts.length} productos tienen`} unidades sin una compra registrada: su costo cuenta como RD$0 y la ganancia sale más alta de lo real.</div><button onClick={() => setCatalogFilter('sincosto')}>Ver cuáles</button></div>}
         {catalogKind === 'producto' && catalogFilter === 'sincosto' && <p className="section-help">Para corregirlo: toca «Editar», pon las unidades en 0 y guarda; después toca «Reponer» y registra cuántas tienes y a cuánto te salió cada una.</p>}
-        <div className="record-list">{filteredProducts.map((product) => catalogKind === 'producto' ? <ProductCard key={product.id} product={product} noCost={uncostedIds.has(product.id)} lots={data.purchases.filter((purchase) => purchase.productId === product.id).length} onEdit={() => { setError(''); setEditing(product) }} onRestock={() => openPurchase(product)} onSell={() => openSale(product)} onLots={() => setLotsProductId(product.id)} onDelete={() => { if (confirm(`¿Enviar "${product.name}" a la papelera? Deja de verse en la tienda; lo puedes restaurar durante 30 días.`)) run(() => deleteProduct({ data: product.id }), 'Enviado a la papelera.') }} />
-          : <ServiceCard key={product.id} product={product} onEdit={() => { setError(''); setEditing(product) }} onToggle={() => run(() => saveProduct({ data: { ...product, active: !product.active } }), product.active ? 'Oculto de la tienda.' : 'Visible en la tienda.')} onDelete={() => { if (confirm(`¿Enviar "${product.name}" a la papelera? Podrás restaurarlo durante 30 días.`)) run(() => deleteProduct({ data: product.id }), 'Enviado a la papelera.') }} />)}</div>
+        <div className="record-list">{filteredProducts.map((product) => catalogKind === 'producto' ? <ProductCard key={product.id} product={product} noCost={uncostedIds.has(product.id)} lots={data.purchases.filter((purchase) => purchase.productId === product.id).length} onEdit={() => { setError(''); setEditing({ ...product, images: product.images ?? [] }) }} onRestock={() => openPurchase(product)} onSell={() => openSale(product)} onLots={() => setLotsProductId(product.id)} onDelete={() => { if (confirm(`¿Enviar "${product.name}" a la papelera? Deja de verse en la tienda; lo puedes restaurar durante 30 días.`)) run(() => deleteProduct({ data: product.id }), 'Enviado a la papelera.') }} />
+          : <ServiceCard key={product.id} product={product} onEdit={() => { setError(''); setEditing({ ...product, images: product.images ?? [] }) }} onToggle={() => run(() => saveProduct({ data: { ...product, active: !product.active } }), product.active ? 'Oculto de la tienda.' : 'Visible en la tienda.')} onDelete={() => { if (confirm(`¿Enviar "${product.name}" a la papelera? Podrás restaurarlo durante 30 días.`)) run(() => deleteProduct({ data: product.id }), 'Enviado a la papelera.') }} />)}</div>
         {!filteredProducts.length && <div className="empty-admin">{q || catalogFilter !== 'todos' ? 'No hay resultados en esta lista.' : catalogKind === 'servicio' ? 'Todavía no hay servicios. Crea el primero.' : 'Todavía no hay productos. Crea el primero.'}</div>}
       </section>}
 
@@ -960,12 +991,17 @@ export function AdminPanel() {
 
     {editing && <div className="modal-wrap" onClick={() => setEditing(null)}><form className="product-modal" onSubmit={handleProduct} onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setEditing(null)} aria-label="Cerrar">×</button><span>CATÁLOGO</span><h2>{editing.id ? `Editar ${editing.kind === 'servicio' ? 'servicio' : 'producto'}` : editing.kind === 'servicio' ? 'Nuevo servicio' : 'Nuevo producto'}</h2>{error && <p className="form-error">{error}</p>}
       <div className="form-grid">
-        <div className="wide image-picker">
-          <div className="image-preview">{editing.image ? <img src={editing.image} alt="" /> : <ImagePlus />}</div>
-          <div>
-            <label className="upload-zone"><ImagePlus />{uploading ? 'Subiendo foto...' : editing.image ? 'Cambiar foto' : 'Subir foto'}<input hidden disabled={uploading} type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && uploadImage(event.target.files[0], 'product')} /></label>
-            <details className="url-details"><summary>O pegar el enlace de una imagen</summary><input value={editing.image} onChange={(event) => setEditing({ ...editing, image: event.target.value })} placeholder="https://..." /></details>
+        <div className="wide photo-manager">
+          <div className="photo-manager-head"><strong>Fotos</strong><small>{(editing.image ? 1 : 0) + editing.images.length} de 11 · la primera es la principal</small></div>
+          <div className="photo-grid">
+            {[editing.image, ...editing.images].filter(Boolean).map((url, index) => <div key={url} className={`photo-tile ${index === 0 ? 'main' : ''}`}>
+              <img src={url} alt="" />
+              {index === 0 ? <span className="photo-badge">Principal</span> : <button type="button" className="photo-main" onClick={() => setEditing({ ...editing, image: url, images: [editing.image, ...editing.images.filter((item) => item !== url)].filter(Boolean) })}>Hacer principal</button>}
+              <button type="button" className="photo-remove" aria-label="Quitar foto" onClick={() => index === 0 ? setEditing({ ...editing, image: editing.images[0] ?? '', images: editing.images.slice(1) }) : setEditing({ ...editing, images: editing.images.filter((item) => item !== url) })}><X size={14} /></button>
+            </div>)}
+            {(editing.image ? 1 : 0) + editing.images.length < 11 && <label className="photo-add">{uploading ? <LoaderCircle className="spin" /> : <ImagePlus />}<span>{uploading ? 'Subiendo…' : 'Agregar fotos'}</span><input hidden multiple disabled={uploading} type="file" accept="image/*" onChange={(event) => { if (event.target.files?.length) uploadGallery(event.target.files); event.target.value = '' }} /></label>}
           </div>
+          <details className="url-details"><summary>O pegar el enlace de una imagen</summary><input placeholder="https://... y toca fuera para agregarla" onBlur={(event) => { const url = event.target.value.trim(); if (!url) return; setEditing(!editing.image ? { ...editing, image: url } : { ...editing, images: [...editing.images, url] }); event.target.value = '' }} /></details>
         </div>
         <label>Tipo<select value={editing.kind} onChange={(event) => setEditing({ ...editing, kind: event.target.value })}><option value="servicio">Servicio (se agenda una cita)</option><option value="producto">Producto (se compra)</option></select></label>
         <label>Categoría<input required list="category-options" placeholder={editing.kind === 'servicio' ? 'Cejas, Pestañas...' : 'Jabones, Mantequillas...'} value={editing.category} onChange={(event) => setEditing({ ...editing, category: event.target.value })} /><datalist id="category-options">{Array.from(new Set(data.products.filter((product) => product.kind === editing.kind).map((product) => product.category))).map((category) => <option key={category} value={category} />)}</datalist></label>

@@ -858,3 +858,47 @@ img{max-width:100%}
 .qty-input{width:38px;border:0;background:transparent;text-align:center;font:11px var(--font-mono);padding:4px 0;-moz-appearance:textfield}
 .qty-input::-webkit-outer-spin-button,.qty-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .qty-max{display:block;margin-top:6px;font-size:11px;color:var(--gold-dark)}
+
+/* ═══ Galería de fotos (se desliza como en JB/Temu) ═══ */
+.gallery{position:relative;width:100%;height:100%;overflow:hidden}
+.gallery-track{display:flex;width:100%;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;cursor:pointer}
+.gallery-track::-webkit-scrollbar{display:none}
+.gallery-slide{flex:0 0 100%;height:100%;scroll-snap-align:center;scroll-snap-stop:always}
+.gallery-slide img{width:100%;height:100%;object-fit:cover;display:block;user-select:none}
+.gallery-counter{position:absolute;top:8px;right:8px;background:rgba(43,36,28,.72);color:white;font:500 10px var(--font-mono);padding:3px 7px;border-radius:999px;pointer-events:none}
+.gallery-dots{position:absolute;left:0;right:0;bottom:8px;display:flex;justify-content:center;gap:4px;pointer-events:none}
+.gallery-dots i{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.6)}
+.gallery-dots i.on{background:white;width:12px;border-radius:3px}
+.gallery-arrow{position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,252,246,.9);color:var(--ink);display:grid;place-items:center;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.gallery-arrow.prev{left:10px}.gallery-arrow.next{right:10px}
+.gallery-arrow:disabled{opacity:0;pointer-events:none}
+.service-image,.product-image{position:relative}
+.product-image>span{z-index:2}
+.product-row:hover .product-image img{transform:none}
+h3.clickable{cursor:pointer}
+/* Ficha grande */
+.detail-sheet{max-width:880px;padding:0;display:grid;grid-template-columns:1.1fr 1fr;overflow:hidden}
+.detail-sheet .modal-close{z-index:3;background:rgba(255,252,246,.92)}
+.detail-sheet-gallery{aspect-ratio:1/1;background:#ece2cf}
+.detail-sheet-info{padding:34px 28px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+.detail-sheet-info h2{font:600 34px/1.1 var(--font-display);margin:0}
+.detail-sheet-price{font:700 28px var(--font-display);margin:4px 0 0;display:flex;align-items:baseline;gap:10px}
+.detail-sheet-price s{font:400 16px var(--font-body);color:var(--muted)}
+.detail-sheet-meta{display:flex;align-items:center;gap:6px;font:500 11px var(--font-mono);text-transform:uppercase;letter-spacing:.08em;color:var(--gold-dark);margin:0}
+.detail-sheet-desc{color:#5b5142;line-height:1.75;margin:6px 0 16px;flex:1}
+@media(max-width:720px){.detail-sheet{grid-template-columns:1fr;max-height:92vh;overflow:auto}.detail-sheet-info{padding:22px 20px 26px}.detail-sheet-info h2{font-size:28px}}
+/* Panel: administrador de fotos */
+.photo-manager{display:grid;gap:10px}
+.photo-manager-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font:600 11px var(--font-mono);text-transform:uppercase;letter-spacing:.08em}
+.photo-manager-head small{font:400 12px var(--font-body);text-transform:none;letter-spacing:0;color:var(--muted)}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+.photo-tile{position:relative;aspect-ratio:1/1;background:var(--paper);border:1px solid var(--line);overflow:hidden}
+.photo-tile.main{border:2px solid var(--gold-dark)}
+.photo-tile img{width:100%;height:100%;object-fit:cover}
+.photo-badge{position:absolute;left:0;right:0;bottom:0;background:var(--gold-dark);color:white;font:600 10px var(--font-body);text-align:center;padding:4px;text-transform:none;letter-spacing:0}
+.photo-main{position:absolute;left:0;right:0;bottom:0;border:0;background:rgba(43,36,28,.78);color:white;font:600 10px var(--font-body);padding:5px 2px;cursor:pointer}
+.photo-remove{position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:50%;border:0;background:rgba(43,36,28,.8);color:white;display:grid;place-items:center;cursor:pointer}
+.photo-add{aspect-ratio:1/1;border:1px dashed var(--gold);background:var(--white);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;color:var(--gold-dark);font:600 12px var(--font-body)!important;text-transform:none!important;letter-spacing:0!important;text-align:center}
+.photo-add svg{width:22px;height:22px}
+.service-image .gallery{position:absolute;inset:0}
+.service-image .gallery-slide img{position:static}

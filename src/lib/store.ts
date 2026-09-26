@@ -107,12 +107,13 @@ function ensureSchema(): Promise<void> {
       // Sube el número si agregas otra tabla/columna aquí.
       const result = await db.execute(sql`select
         (select count(*) from information_schema.tables where table_schema = current_schema() and table_name in ('push_subscriptions', 'purchases', 'expenses'))
-        + (select count(*) from information_schema.columns where table_schema = current_schema() and ((table_name = 'invoices' and column_name = 'deleted_at') or (table_name = 'products' and column_name in ('cost', 'original_price')))) as n`)
+        + (select count(*) from information_schema.columns where table_schema = current_schema() and ((table_name = 'invoices' and column_name = 'deleted_at') or (table_name = 'products' and column_name in ('cost', 'original_price', 'images')))) as n`)
       const rows = ((result as unknown as { rows?: Array<{ n: number | string }> }).rows ?? (result as unknown as Array<{ n: number | string }>)) || []
-      if (Number(rows[0]?.n ?? 0) >= 6) return
+      if (Number(rows[0]?.n ?? 0) >= 7) return
       await db.execute(sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "deleted_at" timestamp`)
       await db.execute(sql`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "cost" integer NOT NULL DEFAULT 0`)
       await db.execute(sql`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "original_price" integer NOT NULL DEFAULT 0`)
+      await db.execute(sql`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "images" jsonb NOT NULL DEFAULT '[]'::jsonb`)
       await db.execute(sql`CREATE TABLE IF NOT EXISTS "purchases" ("id" serial PRIMARY KEY, "product_id" integer NOT NULL, "product_name" text NOT NULL, "fund" text NOT NULL DEFAULT 'capital', "quantity" integer NOT NULL, "unit_cost" integer NOT NULL, "total_cost" integer NOT NULL, "remaining_quantity" integer NOT NULL, "notes" text NOT NULL DEFAULT '', "created_at" timestamp NOT NULL DEFAULT now())`)
       await db.execute(sql`CREATE TABLE IF NOT EXISTS "expenses" ("id" serial PRIMARY KEY, "type" text NOT NULL DEFAULT 'negocio', "description" text NOT NULL, "amount" integer NOT NULL, "created_at" timestamp NOT NULL DEFAULT now())`)
       await db.execute(sql`CREATE TABLE IF NOT EXISTS "push_subscriptions" ("id" serial PRIMARY KEY, "endpoint" text NOT NULL UNIQUE, "p256dh" text NOT NULL, "auth" text NOT NULL, "label" text NOT NULL DEFAULT '', "created_at" timestamp NOT NULL DEFAULT now())`)
@@ -323,7 +324,7 @@ async function cleanupExpired() {
     const expiredProducts = await db.select().from(products).where(and(isNotNull(products.deletedAt), lt(products.deletedAt, cutoff)))
     for (const product of expiredProducts) {
       await db.delete(products).where(eq(products.id, product.id))
-      if (product.image) await trashImage(product.image, 'Producto eliminado definitivamente tras 30 días en papelera')
+      for (const url of [product.image, ...(product.images ?? [])]) if (url) await trashImage(url, 'Producto eliminado definitivamente tras 30 días en papelera')
     }
   } catch { /* se reintenta en el próximo acceso al panel */ }
 
@@ -610,7 +611,7 @@ export const getAdminData = createServerFn({ method: 'GET' }).handler(async () =
 // ADMIN — productos y servicios
 // ───────────────────────────────────────────────────────────────────────
 export const saveProduct = createServerFn({ method: 'POST' })
-  .inputValidator((data: { id?: number; kind: string; name: string; category: string; description: string; price: number; originalPrice?: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }) => data)
+  .inputValidator((data: { id?: number; kind: string; name: string; category: string; description: string; price: number; originalPrice?: number; stock: number; durationMinutes: number; image: string; images?: string[]; featured: boolean; active: boolean }) => data)
   .handler(async ({ data }) => {
     await requireAdmin()
     if (!clean(data.name)) throw new Error('Escribe el nombre del artículo.')
@@ -618,11 +619,17 @@ export const saveProduct = createServerFn({ method: 'POST' })
     if (!(Number(data.price) >= 0) || !(Number(data.stock) >= 0)) throw new Error('El precio y las existencias no pueden ser negativos.')
     // Un producto nuevo empieza en 0: las unidades se suman con «Reponer»,
     // así queda registrado lo que costaron (igual que en JB Tech Store).
-    const values = { kind: data.kind, name: clean(data.name, 160), category: clean(data.category, 80) || 'General', description: clean(data.description, 2000), price: Math.round(Number(data.price)), originalPrice: Math.max(0, Math.round(Number(data.originalPrice) || 0)), stock: data.id ? Math.floor(Number(data.stock)) : 0, durationMinutes: Math.max(0, Math.floor(Number(data.durationMinutes) || 0)), image: clean(data.image, 1000), featured: data.featured, active: data.active }
+    // Fotos extra: hasta 10, sin repetir la principal ni entre ellas.
+    const mainImage = clean(data.image, 1000)
+    const images = [...new Set((Array.isArray(data.images) ? data.images : []).map((url) => clean(url, 1000)).filter((url) => url && url !== mainImage))].slice(0, 10)
+    const values = { images, kind: data.kind, name: clean(data.name, 160), category: clean(data.category, 80) || 'General', description: clean(data.description, 2000), price: Math.round(Number(data.price)), originalPrice: Math.max(0, Math.round(Number(data.originalPrice) || 0)), stock: data.id ? Math.floor(Number(data.stock)) : 0, durationMinutes: Math.max(0, Math.floor(Number(data.durationMinutes) || 0)), image: clean(data.image, 1000), featured: data.featured, active: data.active }
     if (data.id) {
       const [current] = await db.select().from(products).where(eq(products.id, data.id)).limit(1)
-      if (current && current.image && current.image !== data.image) {
-        await trashImage(current.image, 'Imagen reemplazada desde el panel de administración')
+      // Las fotos que ya no se usan (ni como principal ni en la galería) van
+      // a la papelera de imágenes.
+      const kept = new Set([mainImage, ...images])
+      for (const url of [current?.image, ...(current?.images ?? [])]) {
+        if (url && !kept.has(url)) await trashImage(url, 'Imagen reemplazada desde el panel de administración')
       }
       await db.update(products).set(values).where(eq(products.id, data.id))
       return data.id
@@ -655,7 +662,7 @@ export const purgeProduct = createServerFn({ method: 'POST' }).inputValidator((i
   await requireAdmin()
   const [product] = await db.select().from(products).where(eq(products.id, data)).limit(1)
   await db.delete(products).where(eq(products.id, data))
-  if (product?.image) await trashImage(product.image, 'Producto eliminado definitivamente desde la papelera')
+  for (const url of [product?.image, ...(product?.images ?? [])]) if (url) await trashImage(url, 'Producto eliminado definitivamente desde la papelera')
   return true
 })
 

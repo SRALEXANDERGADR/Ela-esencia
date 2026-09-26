@@ -84,3 +84,8 @@ ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un 
 - **Bolsa como JB:** al agregar NO se abre la bolsa; sale un aviso con "Ver bolsa". La cantidad nunca baja de 1 con "−" (para quitar está la papelera) ni pasa de la existencia; se puede escribir a mano (`QtyInput`).
 - **Animaciones al bajar:** lo que ya está en pantalla se muestra enseguida y cada sección se anima una sola vez (`useScrollReveal` + clase `reveal-on` en `<html>`). Antes todo empezaba invisible y las secciones del borde se prendían y apagaban (parpadeo).
 - **Íconos de la tienda** (`android-chrome-*`, `apple-touch-icon`): fondo crema #f0e4d4 completo con "Ela" centrado, sin la mancha recortada; en el manifest llevan `?v=2` para que los teléfonos los actualicen.
+
+## Varias fotos por artículo
+
+- `products.images` (jsonb, creada por `ensureSchema()`): fotos extra además de `image` (la principal). Hasta 11 en total. En el panel se suben varias a la vez, se elige la principal y se quitan; las que ya no se usan van a la papelera de imágenes.
+- En la tienda, cada tarjeta tiene una galería que se desliza (scroll-snap, como JB) con contador "1/4"; al tocar la foto o el nombre se abre una ficha grande con la galería, la descripción y el botón de agregar/agendar.

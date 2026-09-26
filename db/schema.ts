@@ -21,7 +21,9 @@ export const products = pgTable('products', {
   cost: integer('cost').notNull().default(0),
   stock: integer('stock').notNull().default(0), // solo aplica a productos
   durationMinutes: integer('duration_minutes').notNull().default(30), // solo aplica a servicios
-  image: text('image').notNull().default(''),
+  image: text('image').notNull().default(''), // foto principal
+  // Fotos extra (galería que se desliza en la tienda). La columna la crea `ensureSchema()`.
+  images: jsonb('images').notNull().default([]).$type<string[]>(),
   featured: boolean('featured').notNull().default(false),
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
