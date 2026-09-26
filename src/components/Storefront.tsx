@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, Calendar, Check, Clock, Instagram, Menu, Minus, Music2, Plus, Scissors, Search, ShoppingBag, Sparkles, Trash2, X } from 'lucide-react'
+import { ArrowRight, Calendar, Check, Clock, Instagram, Menu, MessageCircle, Minus, Music2, Plus, Scissors, Search, ShoppingBag, Sparkles, Trash2, X } from 'lucide-react'
 import { createAppointment, createOrder, type CartLine } from '@/lib/store'
 import { ShareButton } from './ShareButton'
 import { LeafBloom, LeafBranch, LeafSpray } from './LeafBranch'
@@ -44,6 +44,15 @@ type Product = { id: number; kind: string; name: string; category: string; descr
 type Props = { data: { products: Product[]; content: Record<string, string> } }
 
 const money = (value: number) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(value / 100)
+const CART_KEY = 'ela-cart'
+const PLACEHOLDER = '/placeholder.png'
+const handle = (value: string) => (value || '').trim().replace(/^@+/, '')
+const waNumber = (value: string) => (value || '').replace(/\D/g, '')
+// Fecha local (no UTC), para que después de las 8 p. m. no salga mañana.
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+const prettyDate = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return y ? new Intl.DateTimeFormat('es-DO', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(y, m - 1, d)) : iso }
+/** Si una foto no carga (enlace roto), muestra la imagen de respaldo. */
+const onImgError = (event: React.SyntheticEvent<HTMLImageElement>) => { const img = event.currentTarget; if (!img.src.endsWith(PLACEHOLDER)) img.src = PLACEHOLDER }
 
 /** Logotipo tipográfico de ELA: "Ela" en trazo cursivo + "esencia" en
  * versalitas espaciadas debajo — sin insignia circular. */
@@ -102,12 +111,44 @@ export function Storefront({ data }: Props) {
   const [cart, setCart] = useState<CartLine[]>([])
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('Todos')
-  const [confirmation, setConfirmation] = useState<{ orderNumber: string; total: number } | null>(null)
+  const [confirmation, setConfirmation] = useState<{ orderNumber: string; total: number; summary: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   const [bookingService, setBookingService] = useState<Product | null>(null)
-  const [bookingConfirmation, setBookingConfirmation] = useState<{ appointmentNumber: string } | null>(null)
+  const [bookingConfirmation, setBookingConfirmation] = useState<{ appointmentNumber: string; summary: string } | null>(null)
+  const cartLoaded = useRef(false)
+
+  // La bolsa se guarda en este teléfono: si la clienta cierra la página,
+  // al volver sigue ahí. Se ajusta a las unidades que haya hoy.
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CART_KEY) || '[]') as CartLine[]
+      const valid = saved.flatMap((line) => {
+        const product = products.find((item) => item.id === line.productId && item.kind === 'producto')
+        if (!product || product.stock <= 0) return []
+        return [{ ...line, name: product.name, price: product.price, image: product.image, quantity: Math.min(Math.max(1, Math.floor(line.quantity)), product.stock) }]
+      })
+      if (valid.length) setCart(valid)
+    } catch { /* sin almacenamiento: la bolsa empieza vacía */ }
+    cartLoaded.current = true
+  }, [products])
+  useEffect(() => {
+    if (!cartLoaded.current) return
+    try { localStorage.setItem(CART_KEY, JSON.stringify(cart)) } catch { /* ignorar */ }
+  }, [cart])
+
+  // Con un menú, la bolsa o una ventana abierta, la página de atrás no se
+  // mueve, y la tecla Escape los cierra.
+  const anyOverlay = menuOpen || cartOpen || checkoutOpen || Boolean(bookingService)
+  useEffect(() => {
+    if (!anyOverlay) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMenuOpen(false); setCartOpen(false); setCheckoutOpen(false); setConfirmation(null); setBookingService(null); setBookingConfirmation(null) } }
+    window.addEventListener('keydown', onKey)
+    return () => { document.body.style.overflow = previous; window.removeEventListener('keydown', onKey) }
+  }, [anyOverlay])
   const [bookingSubmitting, setBookingSubmitting] = useState(false)
   const [bookingError, setBookingError] = useState('')
 
@@ -138,8 +179,10 @@ export function Storefront({ data }: Props) {
     setError('')
     const form = new FormData(event.currentTarget)
     try {
-      const result = await createOrder({ data: { name: String(form.get('name')), phone: String(form.get('phone')), email: String(form.get('email')), address: String(form.get('address')), items: cart } })
-      setConfirmation(result)
+      const name = String(form.get('name'))
+      const result = await createOrder({ data: { name, phone: String(form.get('phone')), email: String(form.get('email')), address: String(form.get('address')), items: cart } })
+      const summary = [`Hola, soy ${name}. Acabo de hacer el pedido ${result.orderNumber} en la web:`, ...cart.map((line) => `• ${line.quantity} × ${line.name}`), `Total: ${money(result.total)}`].join('\n')
+      setConfirmation({ ...result, summary })
       setCart([])
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No pudimos enviar el pedido.')
@@ -155,8 +198,12 @@ export function Storefront({ data }: Props) {
     setBookingError('')
     const form = new FormData(event.currentTarget)
     try {
-      const result = await createAppointment({ data: { name: String(form.get('name')), phone: String(form.get('phone')), email: String(form.get('email')), serviceId: bookingService.id, date: String(form.get('date')), time: String(form.get('time')), notes: String(form.get('notes') || '') } })
-      setBookingConfirmation(result)
+      const name = String(form.get('name'))
+      const date = String(form.get('date'))
+      const time = String(form.get('time'))
+      const result = await createAppointment({ data: { name, phone: String(form.get('phone')), email: String(form.get('email')), serviceId: bookingService.id, date, time, notes: String(form.get('notes') || '') } })
+      const summary = `Hola, soy ${name}. Acabo de agendar la cita ${result.appointmentNumber} en la web: ${bookingService.name}, el ${prettyDate(date)} a las ${time}.`
+      setBookingConfirmation({ ...result, summary })
     } catch (caught) {
       setBookingError(caught instanceof Error ? caught.message : 'No pudimos agendar la cita.')
     } finally {
@@ -164,9 +211,18 @@ export function Storefront({ data }: Props) {
     }
   }
 
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayIso = localToday()
+  const whatsapp = waNumber(copy.whatsapp)
+  const waHref = (text: string) => `https://wa.me/${whatsapp}?text=${encodeURIComponent(text)}`
 
   useScrollReveal([visibleProducts.length, category, query, services.length])
+  // Fotos que fallaron antes de que la página terminara de cargar (el
+  // onError de React todavía no existía): se cambian por la de respaldo.
+  useEffect(() => {
+    document.querySelectorAll<HTMLImageElement>('.site-shell img').forEach((img) => {
+      if (img.complete && img.naturalWidth === 0 && !img.src.endsWith(PLACEHOLDER)) img.src = PLACEHOLDER
+    })
+  }, [])
   const leafRefs = useLeafParallax()
 
   return <div className="site-shell">
@@ -191,19 +247,19 @@ export function Storefront({ data }: Props) {
       <a className="wordmark" href="#inicio"><BrandMark /></a>
       <nav className="desktop-nav"><a href="#servicios">{copy.navServices}</a><a href="#catalogo">{copy.navCatalog}</a><a href="#beneficios">{copy.navBenefits}</a><a href="#contacto">{copy.navContact}</a></nav>
       <div className="topbar-actions">
-        <button className="cart-button" onClick={() => setCartOpen(true)}><ShoppingBag size={19} /><span>Bolsa</span><b>{cartCount}</b></button>
+        <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`Abrir bolsa (${cartCount})`}><ShoppingBag size={19} /><span>Bolsa</span><b className={cartCount ? 'has-items' : ''}>{cartCount}</b></button>
       </div>
     </header>
 
     <div className={`overlay ${menuOpen ? 'visible' : ''}`} onClick={() => setMenuOpen(false)} />
     <aside className={`side-menu ${menuOpen ? 'open' : ''}`}>
-      <div className="drawer-head"><BrandMark className="mini-mark" /><button className="icon-button" onClick={() => setMenuOpen(false)}><X /></button></div>
+      <div className="drawer-head"><BrandMark className="mini-mark" /><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú"><X /></button></div>
       <p className="drawer-kicker">Explora ELA</p>
-      <a href="#servicios" onClick={() => setMenuOpen(false)}>Servicios <ArrowRight /></a>
-      <a href="#catalogo" onClick={() => setMenuOpen(false)}>Productos <ArrowRight /></a>
-      <a href="#beneficios" onClick={() => setMenuOpen(false)}>Beneficios <ArrowRight /></a>
+      <a href="#servicios" onClick={() => setMenuOpen(false)}>{copy.navServices} <ArrowRight /></a>
+      <a href="#catalogo" onClick={() => setMenuOpen(false)}>{copy.navCatalog} <ArrowRight /></a>
+      <a href="#beneficios" onClick={() => setMenuOpen(false)}>{copy.navBenefits} <ArrowRight /></a>
       <a href="#historia" onClick={() => setMenuOpen(false)}>Nuestra historia <ArrowRight /></a>
-      <a href="#contacto" onClick={() => setMenuOpen(false)}>Contacto <ArrowRight /></a>
+      <a href="#contacto" onClick={() => setMenuOpen(false)}>{copy.navContact} <ArrowRight /></a>
       <Link to="/politicas" onClick={() => setMenuOpen(false)}>Políticas <ArrowRight /></Link>
       <Link to="/terminos" onClick={() => setMenuOpen(false)}>Términos y condiciones <ArrowRight /></Link>
       <div className="drawer-admin"><span>Área privada</span><Link to="/admin">Entrar al panel administrativo</Link></div>
@@ -216,7 +272,7 @@ export function Storefront({ data }: Props) {
         <h1 className="reveal delay-1">{copy.heroTitle}</h1>
         <p className="ela-hero-lede reveal delay-1">{copy.heroDescription}</p>
         <a className="primary-button reveal delay-1" href="#servicios">{copy.heroCta}<ArrowRight /></a>
-        <div className="ela-hero-banner reveal delay-1"><img src={copy.heroImage} alt="ELA — belleza y cuidado" /></div>
+        <div className="ela-hero-banner reveal delay-1"><img src={copy.heroImage || PLACEHOLDER} alt="ELA — belleza y cuidado" fetchPriority="high" onError={onImgError} /></div>
       </section>
 
       <section className="ela-manifesto" id="beneficios">
@@ -230,7 +286,7 @@ export function Storefront({ data }: Props) {
         <div className="ela-section-heading reveal"><span>Servicios de belleza</span><h2>{copy.servicesTitle}</h2><p>{copy.servicesDescription}</p></div>
         <div className="service-grid">
           {services.map((service, index) => <article className={`service-card reveal delay-${(index % 3) + 1}`} key={service.id}>
-            <div className="service-image"><img src={service.image} alt={service.name} /></div>
+            <div className="service-image"><img src={service.image || PLACEHOLDER} alt={service.name} loading="lazy" decoding="async" onError={onImgError} /></div>
             <div className="service-info">
               <p className="product-category">{service.category}</p>
               <h3>{service.name}</h3>
@@ -250,8 +306,8 @@ export function Storefront({ data }: Props) {
           <aside className="filters reveal"><label><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar producto..." /></label><div className="category-list">{categories.map((item) => <button className={category === item ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}<span>{item === 'Todos' ? goods.length : goods.filter((product) => product.category === item).length}</span></button>)}</div></aside>
           <div className="product-list">{visibleProducts.map((product, index) => <article className={`product-row reveal delay-${(index % 3) + 1}`} key={product.id}>
             <div className="product-number">{String(index + 1).padStart(2, '0')}</div>
-            <div className="product-image"><img src={product.image} alt={product.name} />{product.stock === 0 && <span>Agotado</span>}</div>
-            <div className="product-info"><p className="product-category">{product.category}</p><h3>{product.name}</h3><p>{product.description}</p><div className="stock-line"><span className={product.stock ? '' : 'empty'}>{product.stock ? `${product.stock} disponibles` : 'Sin existencias'}</span></div></div>
+            <div className="product-image"><img src={product.image || PLACEHOLDER} alt={product.name} loading="lazy" decoding="async" onError={onImgError} />{product.stock === 0 && <span>Agotado</span>}</div>
+            <div className="product-info"><p className="product-category">{product.category}</p><h3>{product.name}</h3><p>{product.description}</p><div className="stock-line"><span className={product.stock ? '' : 'empty'}>{product.stock ? (product.stock <= 5 ? `¡Quedan ${product.stock}!` : 'Disponible') : 'Sin existencias'}</span></div></div>
             <div className="product-action"><strong>{money(product.price)}</strong><button disabled={product.stock === 0} onClick={() => addToCart(product)}>{product.stock ? 'Agregar' : 'Agotado'}<Plus /></button></div>
           </article>)}{visibleProducts.length === 0 && <div className="empty-state"><Search /><h3>No encontramos ese producto</h3><p>Prueba otra palabra o categoría.</p></div>}</div>
         </div>
@@ -269,9 +325,9 @@ export function Storefront({ data }: Props) {
     <footer id="contacto">
       <BlockSprig left={LeafBranch} right={LeafBloom} />
       <div className="footer-brand reveal"><BrandMark className="footer-mark" /><p>{copy.footerText}</p></div>
-      <div className="reveal delay-1"><span>Conversemos</span><a className="whatsapp" href={`https://wa.me/${copy.whatsapp}`} target="_blank" rel="noreferrer">Pedidos y citas <ArrowRight /></a></div>
+      <div className="reveal delay-1"><span>Conversemos</span><a className="whatsapp" href={`https://wa.me/${whatsapp}`} target="_blank" rel="noreferrer">Escríbenos por WhatsApp <ArrowRight /></a></div>
       <div className="reveal delay-2"><span>Horario</span><p>{copy.schedule}</p><p className="footer-location">{copy.location}</p></div>
-      <div className="reveal delay-3"><span>Síguenos</span><a className="social-line" href={`https://instagram.com/${(copy.instagram || '').replace('@', '')}`} target="_blank" rel="noreferrer"><Instagram size={16} />{copy.instagram}</a><a className="social-line" href={`https://tiktok.com/${(copy.tiktok || '').replace('@', '@')}`} target="_blank" rel="noreferrer"><Music2 size={16} />{copy.tiktok}</a></div>
+      <div className="reveal delay-3"><span>Síguenos</span>{handle(copy.instagram) && <a className="social-line" href={`https://instagram.com/${handle(copy.instagram)}`} target="_blank" rel="noreferrer"><Instagram size={16} />@{handle(copy.instagram)}</a>}{handle(copy.tiktok) && <a className="social-line" href={`https://www.tiktok.com/@${handle(copy.tiktok)}`} target="_blank" rel="noreferrer"><Music2 size={16} />@{handle(copy.tiktok)}</a>}</div>
       <div className="footer-bottom reveal">
         <a className="gadr-credit" href="https://gadrnet.com" target="_blank" rel="noopener noreferrer">
           <span className="gadr-credit-text">Diseño y desarrollo de la tienda: GADR Net | gadrnet.com</span>
@@ -284,14 +340,16 @@ export function Storefront({ data }: Props) {
       </div>
     </footer>
 
+    {whatsapp && <a className="wa-float" href={waHref('Hola ELA, quiero información.')} target="_blank" rel="noreferrer" aria-label="Escríbenos por WhatsApp"><MessageCircle /><span>¿Dudas? Escríbenos</span></a>}
+
     <div className={`overlay ${cartOpen ? 'visible' : ''}`} onClick={() => setCartOpen(false)} />
-    <aside className={`cart-drawer ${cartOpen ? 'open' : ''}`}><div className="drawer-head"><div><span className="drawer-kicker">BOLSA · {cartCount} PIEZAS</span><h2>{copy.cartTitle}</h2></div><button className="icon-button" onClick={() => setCartOpen(false)}><X /></button></div>
-      <div className="cart-lines">{cart.map((line) => <div className="cart-line" key={line.productId}><img src={line.image} alt="" /><div><h4>{line.name}</h4><p>{money(line.price)}</p><div className="quantity"><button onClick={() => changeQuantity(line.productId, -1)}><Minus /></button><span>{line.quantity}</span><button onClick={() => changeQuantity(line.productId, 1)}><Plus /></button></div></div><button className="remove" onClick={() => setCart((current) => current.filter((item) => item.productId !== line.productId))}><Trash2 /></button></div>)}{!cart.length && <div className="empty-cart"><ShoppingBag /><h3>Tu bolsa está esperando</h3><p>Elige algún producto artesanal.</p></div>}</div>
+    <aside className={`cart-drawer ${cartOpen ? 'open' : ''}`}><div className="drawer-head"><div><span className="drawer-kicker">BOLSA · {cartCount} PIEZAS</span><h2>{copy.cartTitle}</h2></div><button className="icon-button" onClick={() => setCartOpen(false)} aria-label="Cerrar bolsa"><X /></button></div>
+      <div className="cart-lines">{cart.map((line) => <div className="cart-line" key={line.productId}><img src={line.image || PLACEHOLDER} alt="" onError={onImgError} /><div><h4>{line.name}</h4><p>{money(line.price)}</p><div className="quantity"><button onClick={() => changeQuantity(line.productId, -1)} aria-label="Quitar uno"><Minus /></button><span>{line.quantity}</span><button onClick={() => changeQuantity(line.productId, 1)} aria-label="Agregar uno"><Plus /></button></div></div><button className="remove" aria-label="Quitar de la bolsa" onClick={() => setCart((current) => current.filter((item) => item.productId !== line.productId))}><Trash2 /></button></div>)}{!cart.length && <div className="empty-cart"><ShoppingBag /><h3>Tu bolsa está esperando</h3><p>Elige algún producto artesanal.</p></div>}</div>
       <div className="cart-summary"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><p>La entrega se coordina después de confirmar el pedido.</p><button className="primary-button full" disabled={!cart.length} onClick={() => { setCartOpen(false); setCheckoutOpen(true) }}>Continuar al checkout <ArrowRight /></button></div>
     </aside>
 
-    {checkoutOpen && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}><X /></button>{confirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>PEDIDO RECIBIDO</span><h2>Gracias por confiar en ELA.</h2><p>Tu número de pedido es</p><strong>{confirmation.orderNumber}</strong><p>Total: {money(confirmation.total)}. Te contactaremos por WhatsApp para coordinar pago y entrega.</p><button className="primary-button" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}>Volver a la tienda</button></div> : <div className="checkout-grid"><div><span className="drawer-kicker">ÚLTIMO PASO</span><h2>{copy.checkoutTitle}</h2><p>Déjanos tus datos para coordinar pago y entrega.</p><form id="checkout-form" onSubmit={submitOrder}><input required name="name" placeholder="Nombre completo" /><input required name="phone" placeholder="Teléfono" /><input name="email" type="email" placeholder="Correo electrónico (opcional)" /><textarea required name="address" placeholder="Dirección de entrega" rows={3} />{error && <p className="form-error">{error}</p>}</form></div><div className="order-review"><h3>Resumen</h3>{cart.map((line) => <div key={line.productId}><span>{line.quantity} × {line.name}</span><strong>{money(line.quantity * line.price)}</strong></div>)}<div className="checkout-total"><span>Total</span><strong>{money(subtotal)}</strong></div><button form="checkout-form" disabled={submitting} className="primary-button full">{submitting ? 'Enviando...' : 'Enviar pedido'}<ArrowRight /></button></div></div>}</div></div>}
+    {checkoutOpen && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}><X /></button>{confirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>PEDIDO RECIBIDO</span><h2>Gracias por confiar en ELA.</h2><p>Tu número de pedido es</p><strong>{confirmation.orderNumber}</strong><p>Total: {money(confirmation.total)}. Te contactaremos por WhatsApp para coordinar pago y entrega. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(confirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}<button className="text-button" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">ÚLTIMO PASO</span><h2>{copy.checkoutTitle}</h2><p>Déjanos tus datos para coordinar pago y entrega.</p><form id="checkout-form" onSubmit={submitOrder}><input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" /><textarea required name="address" placeholder="Dirección de entrega" rows={3} autoComplete="street-address" maxLength={400} />{error && <p className="form-error">{error}</p>}</form></div><div className="order-review"><h3>Resumen</h3>{cart.map((line) => <div key={line.productId}><span>{line.quantity} × {line.name}</span><strong>{money(line.quantity * line.price)}</strong></div>)}<div className="checkout-total"><span>Total</span><strong>{money(subtotal)}</strong></div><button form="checkout-form" disabled={submitting} className="primary-button full">{submitting ? 'Enviando...' : 'Enviar pedido'}<ArrowRight /></button></div></div>}</div></div>}
 
-    {bookingService && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}><X /></button>{bookingConfirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>CITA AGENDADA</span><h2>Te esperamos en ELA.</h2><p>Tu número de cita es</p><strong>{bookingConfirmation.appointmentNumber}</strong><p>Te contactaremos por WhatsApp para confirmar el horario.</p><button className="primary-button" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}>Volver a la tienda</button></div> : <div className="checkout-grid"><div><span className="drawer-kicker">{copy.appointmentTitle}</span><h2>{bookingService.name}</h2><p>{bookingService.description}</p><form id="booking-form" onSubmit={submitBooking}><input required name="name" placeholder="Nombre completo" /><input required name="phone" placeholder="Teléfono" /><input name="email" type="email" placeholder="Correo electrónico (opcional)" /><div className="date-time-row"><input required name="date" type="date" min={todayIso} /><input required name="time" type="time" /></div><textarea name="notes" placeholder="Notas (opcional)" rows={2} />{bookingError && <p className="form-error">{bookingError}</p>}</form></div><div className="order-review"><h3>Resumen</h3><div><span>{bookingService.name}</span><strong>{money(bookingService.price)}</strong></div><div className="checkout-total"><span>Duración estimada</span><strong>{bookingService.durationMinutes} min</strong></div><button form="booking-form" disabled={bookingSubmitting} className="primary-button full">{bookingSubmitting ? 'Agendando...' : 'Confirmar cita'}<ArrowRight /></button></div></div>}</div></div>}
+    {bookingService && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}><X /></button>{bookingConfirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>CITA AGENDADA</span><h2>Te esperamos en ELA.</h2><p>Tu número de cita es</p><strong>{bookingConfirmation.appointmentNumber}</strong><p>Te contactaremos por WhatsApp para confirmar el horario. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(bookingConfirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}<button className="text-button" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">{copy.appointmentTitle}</span><h2>{bookingService.name}</h2><p>{bookingService.description}</p><form id="booking-form" onSubmit={submitBooking}><input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" /><div className="date-time-row"><label className="field-label">Fecha<input required name="date" type="date" min={todayIso} /></label><label className="field-label">Hora<input required name="time" type="time" step={900} /></label></div><textarea name="notes" placeholder="Notas (opcional)" rows={2} maxLength={600} />{bookingError && <p className="form-error">{bookingError}</p>}</form></div><div className="order-review"><h3>Resumen</h3><div><span>{bookingService.name}</span><strong>{money(bookingService.price)}</strong></div><div className="checkout-total"><span>Duración estimada</span><strong>{bookingService.durationMinutes} min</strong></div><button form="booking-form" disabled={bookingSubmitting} className="primary-button full">{bookingSubmitting ? 'Agendando...' : 'Confirmar cita'}<ArrowRight /></button></div></div>}</div></div>}
   </div>
 }

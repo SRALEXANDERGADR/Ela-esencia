@@ -39,3 +39,13 @@ ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un 
 - Las imágenes subidas se limitan a tipos MIME de imagen y 8 MB, y se confirman directamente en el repo de GitHub de la app (`GITHUB_UPLOAD_PATH`, por defecto `public/uploads`) en vez de un object store — no hay bucket que aprovisionar.
 - Los clientes se pueden crear automáticamente al hacer checkout o agendar una cita (buscando primero por correo y luego por teléfono), o añadirse/editarse manualmente desde el panel admin.
 - El correo de aviso de pedido/cita solo se envía si `RESEND_API_KEY` está definido Y hay una dirección de destino guardada en el editor de contenido (`notificationEmail`). La falta de configuración nunca bloquea la creación del pedido o la cita.
+
+## Reglas añadidas (septiembre 2026)
+
+- **Inventario:** cancelar un pedido (o mandarlo a la papelera) devuelve sus unidades; reactivarlo las vuelve a sacar (revisa antes que alcancen). Un pedido restaurado de la papelera vuelve como "Cancelado".
+- **Pago y factura sincronizados:** marcar un pedido/cita como "Pagado" registra solo el abono por el saldo que faltaba; cuando los abonos saldan una factura, su pedido/cita pasa a "Pagado". No se aceptan abonos mayores que el saldo ni en facturas anuladas.
+- **Validación en el servidor:** cantidades enteras de 1 a 99, solo productos activos, citas desde hoy (hora de RD, UTC-4), textos recortados.
+- **La tienda pública no recibe `notificationEmail`** (ver `PRIVATE_CONTENT_KEYS` en `store.ts`).
+- El número de WhatsApp se limpia (solo dígitos) antes de armar el enlace `wa.me`, así funciona aunque se escriba "+1 (829) 000-0000".
+- El módulo de facturas PDF (`src/lib/invoice.ts`, jsPDF + html2canvas) se carga solo al descargar o compartir, para que el panel abra más rápido.
+- La bolsa se guarda en el navegador (`localStorage`, clave `ela-cart`).

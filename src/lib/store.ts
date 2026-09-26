@@ -71,7 +71,9 @@ function pad(value: number, length = 2) {
 function makeFolio(prefix: string) {
   const now = new Date()
   const fecha = `${pad(now.getDate())}${pad(now.getMonth() + 1)}${now.getFullYear()}`
-  const rand = pad(Math.floor(Math.random() * 10000), 4)
+  // 6 dígitos: con 4 había 1 en 10.000 de repetir folio el mismo día y
+  // el pedido fallaba por la restricción UNIQUE.
+  const rand = pad(Math.floor(Math.random() * 1_000_000), 6)
   return `${prefix}-${fecha}-${rand}`
 }
 
@@ -84,6 +86,55 @@ async function ensureSeeded() {
 async function requireAdmin() {
   const ok = await verifySession()
   if (!ok) throw new Error('Debes iniciar sesión para continuar.')
+}
+
+// Fecha de hoy (YYYY-MM-DD) en República Dominicana (UTC-4, sin horario
+// de verano). El Worker corre en UTC: sin esto, después de las 8 p. m.
+// "hoy" ya sería mañana.
+function todayInDR() {
+  return new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+const clean = (value: unknown, max = 300) => String(value ?? '').trim().slice(0, max)
+
+// Claves del contenido que son configuración privada y no deben llegar
+// a la tienda pública (cualquiera podría leerlas en el navegador).
+const PRIVATE_CONTENT_KEYS = ['notificationEmail']
+
+// Devuelve (o vuelve a sacar) las unidades de un pedido al inventario.
+// Solo aplica a artículos de tipo 'producto'.
+async function adjustStock(items: Array<{ id: number; quantity: number }>, direction: 1 | -1) {
+  for (const item of items) {
+    const qty = Math.max(0, Math.floor(Number(item.quantity) || 0))
+    if (!item.id || !qty) continue
+    await db.update(products).set({ stock: sql`greatest(${products.stock} + ${direction * qty}, 0)` }).where(and(eq(products.id, item.id), eq(products.kind, 'producto')))
+  }
+}
+
+// Mantiene el "Pago" del pedido/cita igual que su factura: si la factura
+// queda saldada, el pedido/cita pasa a "Pagado".
+async function syncSourcePayment(sourceType: string, sourceId: number, status: string) {
+  const paymentStatus = status === 'Pagada' ? 'Pagado' : 'Pendiente'
+  if (sourceType === 'pedido') await db.update(orders).set({ paymentStatus }).where(and(eq(orders.id, sourceId), sql`${orders.paymentStatus} <> 'Reembolsado'`))
+  else await db.update(appointments).set({ paymentStatus }).where(and(eq(appointments.id, sourceId), sql`${appointments.paymentStatus} <> 'Reembolsado'`))
+}
+
+// Al marcar un pedido/cita como "Pagado" desde su lista, se registra solo
+// el abono por el saldo que faltaba, para que la factura también quede
+// "Pagada" y los números de cobranza cuadren.
+async function settleInvoiceFor(sourceType: 'pedido' | 'cita', sourceId: number) {
+  const [invoice] = await db.select().from(invoices).where(and(eq(invoices.sourceType, sourceType), eq(invoices.sourceId, sourceId))).limit(1)
+  if (!invoice || invoice.status === 'Cancelada') return
+  const due = invoice.total - invoice.paid
+  if (due <= 0) return
+  await db.insert(payments).values({ folio: makeFolio('REC'), invoiceId: invoice.id, amount: due, method: 'Efectivo', note: 'Marcado como pagado desde el panel' })
+  await db.update(invoices).set({ paid: invoice.total, status: 'Pagada' }).where(eq(invoices.id, invoice.id))
+}
+
+// Si se reactiva un pedido/cita cancelado, su factura (anulada sin abonos
+// al cancelarlo) vuelve a estar vigente.
+async function reopenInvoiceFor(sourceType: 'pedido' | 'cita', sourceId: number) {
+  await db.update(invoices).set({ status: 'Pendiente' }).where(and(eq(invoices.sourceType, sourceType), eq(invoices.sourceId, sourceId), eq(invoices.status, 'Cancelada'), eq(invoices.paid, 0)))
 }
 
 // Envía una imagen (por su download_url) a la papelera de imágenes. Si la
@@ -186,19 +237,29 @@ export const getStorefront = createServerFn({ method: 'GET' }).handler(async () 
     db.select().from(products).where(and(eq(products.active, true), isNull(products.deletedAt))).orderBy(desc(products.featured), products.id),
     db.select().from(content),
   ])
-  return { products: productRows, content: Object.fromEntries(contentRows.map((item) => [item.key, item.value])) }
+  const publicContent = contentRows.filter((item) => !PRIVATE_CONTENT_KEYS.includes(item.key))
+  return { products: productRows, content: Object.fromEntries(publicContent.map((item) => [item.key, item.value])) }
 })
 
 export const createOrder = createServerFn({ method: 'POST' })
   .inputValidator((data: { name: string; phone: string; email: string; address: string; items: CartLine[] }) => data)
   .handler(async ({ data }) => {
-    if (!data.name || !data.phone || !data.items.length) throw new Error('Completa todos los datos del pedido.')
-    const productRows = await db.select().from(products).where(and(inArray(products.id, data.items.map((item) => item.productId)), isNull(products.deletedAt)))
-    const calculated = data.items.map((item) => {
-      const product = productRows.find((row) => row.id === item.productId)
-      if (!product) throw new Error(`El producto ${item.name} ya no está disponible.`)
-      if (product.kind === 'producto' && product.stock < item.quantity) throw new Error(`Stock insuficiente para ${item.name}.`)
-      return { id: product.id, name: product.name, price: product.price, quantity: item.quantity }
+    data = { ...data, name: clean(data.name, 120), phone: clean(data.phone, 40), email: clean(data.email, 160), address: clean(data.address, 400) }
+    if (!data.name || !data.phone || !Array.isArray(data.items) || !data.items.length) throw new Error('Completa todos los datos del pedido.')
+    // Junta líneas repetidas y rechaza cantidades raras (0, negativas o
+    // con decimales), que antes podían dar un total negativo.
+    const wanted = new Map<number, number>()
+    for (const item of data.items) {
+      const quantity = Number(item.quantity)
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) throw new Error(`Revisa la cantidad de ${clean(item.name, 80)}.`)
+      wanted.set(Number(item.productId), (wanted.get(Number(item.productId)) ?? 0) + quantity)
+    }
+    const productRows = await db.select().from(products).where(and(inArray(products.id, [...wanted.keys()]), isNull(products.deletedAt), eq(products.active, true)))
+    const calculated = [...wanted.entries()].map(([productId, quantity]) => {
+      const product = productRows.find((row) => row.id === productId)
+      if (!product || product.kind !== 'producto') throw new Error('Uno de los productos de tu bolsa ya no está disponible. Revisa tu bolsa.')
+      if (product.stock < quantity) throw new Error(product.stock > 0 ? `Solo quedan ${product.stock} de ${product.name}.` : `${product.name} se agotó.`)
+      return { id: product.id, name: product.name, price: product.price, quantity }
     })
     const total = calculated.reduce((sum, item) => sum + item.price * item.quantity, 0)
     const customer = await findOrCreateCustomer(data)
@@ -231,8 +292,11 @@ export const createOrder = createServerFn({ method: 'POST' })
 export const createAppointment = createServerFn({ method: 'POST' })
   .inputValidator((data: { name: string; phone: string; email: string; serviceId: number; date: string; time: string; notes: string }) => data)
   .handler(async ({ data }) => {
+    data = { ...data, name: clean(data.name, 120), phone: clean(data.phone, 40), email: clean(data.email, 160), notes: clean(data.notes, 600), date: clean(data.date, 10), time: clean(data.time, 5) }
     if (!data.name || !data.phone || !data.serviceId || !data.date || !data.time) throw new Error('Completa todos los datos de la cita.')
-    const [service] = await db.select().from(products).where(and(eq(products.id, data.serviceId), isNull(products.deletedAt))).limit(1)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date) || !/^\d{2}:\d{2}$/.test(data.time)) throw new Error('Revisa la fecha y la hora de la cita.')
+    if (data.date < todayInDR()) throw new Error('Elige una fecha de hoy en adelante.')
+    const [service] = await db.select().from(products).where(and(eq(products.id, data.serviceId), isNull(products.deletedAt), eq(products.active, true))).limit(1)
     if (!service || service.kind !== 'servicio') throw new Error('El servicio seleccionado ya no está disponible.')
     const customer = await findOrCreateCustomer(data)
     const appointmentNumber = makeFolio('CITA')
@@ -314,7 +378,10 @@ export const saveProduct = createServerFn({ method: 'POST' })
   .inputValidator((data: { id?: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }) => data)
   .handler(async ({ data }) => {
     await requireAdmin()
-    const values = { kind: data.kind, name: data.name, category: data.category, description: data.description, price: Number(data.price), stock: Number(data.stock), durationMinutes: Number(data.durationMinutes), image: data.image, featured: data.featured, active: data.active }
+    if (!clean(data.name)) throw new Error('Escribe el nombre del artículo.')
+    if (!['producto', 'servicio'].includes(data.kind)) throw new Error('Tipo de artículo inválido.')
+    if (!(Number(data.price) >= 0) || !(Number(data.stock) >= 0)) throw new Error('El precio y las existencias no pueden ser negativos.')
+    const values = { kind: data.kind, name: clean(data.name, 160), category: clean(data.category, 80) || 'General', description: clean(data.description, 2000), price: Math.round(Number(data.price)), stock: Math.floor(Number(data.stock)), durationMinutes: Math.max(0, Math.floor(Number(data.durationMinutes) || 0)), image: clean(data.image, 1000), featured: data.featured, active: data.active }
     if (data.id) {
       const [current] = await db.select().from(products).where(eq(products.id, data.id)).limit(1)
       if (current && current.image && current.image !== data.image) {
@@ -362,8 +429,24 @@ export const updateOrderStatus = createServerFn({ method: 'POST' })
   .inputValidator((data: { id: number; status: string; paymentStatus: string; force?: boolean }) => data)
   .handler(async ({ data }) => {
     await requireAdmin()
-    if (data.status === 'Cancelado') await checkInvoiceForCancel('pedido', data.id, Boolean(data.force))
+    const [current] = await db.select().from(orders).where(eq(orders.id, data.id)).limit(1)
+    if (!current) throw new Error('Pedido no encontrado.')
+    const cancelling = data.status === 'Cancelado' && current.status !== 'Cancelado'
+    const reopening = data.status !== 'Cancelado' && current.status === 'Cancelado'
+    if (cancelling) await checkInvoiceForCancel('pedido', data.id, Boolean(data.force))
+    if (reopening) {
+      // Antes de reactivarlo, revisa que todavía haya unidades.
+      const ids = current.items.map((item) => item.id)
+      const rows = ids.length ? await db.select().from(products).where(inArray(products.id, ids)) : []
+      for (const item of current.items) {
+        const row = rows.find((product) => product.id === item.id)
+        if (row && row.kind === 'producto' && row.stock < item.quantity) throw new Error(`No hay suficientes unidades de ${row.name} para reactivar este pedido (quedan ${row.stock}).`)
+      }
+    }
     await db.update(orders).set({ status: data.status, paymentStatus: data.paymentStatus }).where(eq(orders.id, data.id))
+    if (cancelling) await adjustStock(current.items, 1)
+    if (reopening) { await adjustStock(current.items, -1); await reopenInvoiceFor('pedido', data.id) }
+    if (data.paymentStatus === 'Pagado' && current.paymentStatus !== 'Pagado') await settleInvoiceFor('pedido', data.id)
     return true
   })
 
@@ -375,14 +458,22 @@ export const deleteOrder = createServerFn({ method: 'POST' })
   .inputValidator((data: { id: number; force?: boolean }) => data)
   .handler(async ({ data }) => {
     await requireAdmin()
+    const [current] = await db.select().from(orders).where(eq(orders.id, data.id)).limit(1)
+    if (!current) throw new Error('Pedido no encontrado.')
     await checkInvoiceForCancel('pedido', data.id, Boolean(data.force))
+    // Al mandarlo a la papelera, sus unidades vuelven al inventario
+    // (si ya estaba cancelado, ya habían vuelto).
     await db.update(orders).set({ deletedAt: new Date() }).where(eq(orders.id, data.id))
+    if (current.status !== 'Cancelado') await adjustStock(current.items, 1)
     return true
   })
 
+// Restaurar un pedido de la papelera: vuelve como "Cancelado" (sus
+// unidades ya habían vuelto al inventario). Si se quiere retomar, se
+// cambia el estado y ahí se vuelven a sacar las unidades.
 export const restoreOrder = createServerFn({ method: 'POST' }).inputValidator((id: number) => id).handler(async ({ data }) => {
   await requireAdmin()
-  await db.update(orders).set({ deletedAt: null }).where(eq(orders.id, data))
+  await db.update(orders).set({ deletedAt: null, status: 'Cancelado' }).where(eq(orders.id, data))
   return true
 })
 
@@ -396,8 +487,12 @@ export const updateAppointmentStatus = createServerFn({ method: 'POST' })
   .inputValidator((data: { id: number; status: string; paymentStatus: string; force?: boolean }) => data)
   .handler(async ({ data }) => {
     await requireAdmin()
-    if (data.status === 'Cancelada') await checkInvoiceForCancel('cita', data.id, Boolean(data.force))
+    const [current] = await db.select().from(appointments).where(eq(appointments.id, data.id)).limit(1)
+    if (!current) throw new Error('Cita no encontrada.')
+    if (data.status === 'Cancelada' && current.status !== 'Cancelada') await checkInvoiceForCancel('cita', data.id, Boolean(data.force))
     await db.update(appointments).set({ status: data.status, paymentStatus: data.paymentStatus }).where(eq(appointments.id, data.id))
+    if (data.status !== 'Cancelada' && current.status === 'Cancelada') await reopenInvoiceFor('cita', data.id)
+    if (data.paymentStatus === 'Pagado' && current.paymentStatus !== 'Pagado') await settleInvoiceFor('cita', data.id)
     return true
   })
 
@@ -426,8 +521,10 @@ export const saveAppointmentAdmin = createServerFn({ method: 'POST' })
   .inputValidator((data: { name: string; phone: string; email: string; serviceId: number; date: string; time: string; notes: string }) => data)
   .handler(async ({ data }) => {
     await requireAdmin()
+    data = { ...data, name: clean(data.name, 120), phone: clean(data.phone, 40), email: clean(data.email, 160), notes: clean(data.notes, 600) }
+    if (!data.name || !data.date || !data.time) throw new Error('Completa el nombre, la fecha y la hora.')
     const [service] = await db.select().from(products).where(and(eq(products.id, data.serviceId), isNull(products.deletedAt))).limit(1)
-    if (!service) throw new Error('Selecciona un servicio válido.')
+    if (!service || service.kind !== 'servicio') throw new Error('Selecciona un servicio válido.')
     const customer = await findOrCreateCustomer(data)
     const appointmentNumber = makeFolio('CITA')
     const [appointment] = await db.insert(appointments).values({ appointmentNumber, customerId: customer.id, customerName: data.name, phone: data.phone, email: data.email, serviceId: service.id, serviceName: service.name, price: service.price, date: data.date, time: data.time, notes: data.notes }).returning()
@@ -445,11 +542,16 @@ export const registerPayment = createServerFn({ method: 'POST' })
     if (!data.amount || data.amount <= 0) throw new Error('El monto del abono debe ser mayor a cero.')
     const [invoice] = await db.select().from(invoices).where(eq(invoices.id, data.invoiceId)).limit(1)
     if (!invoice) throw new Error('Factura no encontrada.')
+    if (invoice.status === 'Cancelada') throw new Error('Esta factura está anulada: no se le pueden registrar abonos.')
+    const amount = Math.round(Number(data.amount))
+    const due = invoice.total - invoice.paid
+    if (amount > due) throw new Error(`El abono no puede ser mayor que el saldo pendiente (RD$${(due / 100).toFixed(2)}).`)
     const folio = makeFolio('REC')
-    const newPaid = invoice.paid + Number(data.amount)
+    const newPaid = invoice.paid + amount
     const status = newPaid >= invoice.total ? 'Pagada' : newPaid > 0 ? 'Abonado' : 'Pendiente'
-    await db.insert(payments).values({ folio, invoiceId: invoice.id, amount: Number(data.amount), method: data.method, note: data.note })
+    await db.insert(payments).values({ folio, invoiceId: invoice.id, amount, method: clean(data.method, 30) || 'Efectivo', note: clean(data.note, 200) })
     await db.update(invoices).set({ paid: newPaid, status }).where(eq(invoices.id, invoice.id))
+    if (status === 'Pagada') await syncSourcePayment(invoice.sourceType, invoice.sourceId, status)
     return { folio }
   })
 
