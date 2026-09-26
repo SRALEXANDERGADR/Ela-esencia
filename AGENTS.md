@@ -59,3 +59,12 @@ ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un 
 - Tabla `push_subscriptions`: se crea sola con `ensureSchema()` en `store.ts`. Las claves VAPID se crean solas y se guardan en `content` (key `vapidKeys`); nunca van al navegador ni al editor de textos.
 - Íconos de la app: `public/admin-192.png`, `admin-512.png` y `badge-96.png` (el ícono chiquito de la notificación).
 - Menú del panel agrupado: Día a día (Inicio, Citas, Pedidos, Cobros), Tu tienda (Catálogo, Clientes, Textos de la web), Ajustes (App y avisos, Papelera). En el teléfono, Inicio tiene el menú en cuadritos.
+
+## Tarjetas, papelera de facturas y revisión (septiembre 2026)
+
+- Pedidos, citas y cobros se ven en **tarjetas** con todo a la vista y sus botones: WhatsApp, Ver, Factura, Borrar (y en cobros: Abonar, Descargar, Compartir, Anular). "Ver" abre el pedido/cita **junto con su factura** (abonar, descargar, compartir, recibos).
+- **Facturas en papelera** (`invoices.deleted_at`, creada por `ensureSchema()`): 30 días para restaurar; al borrarse definitivamente se borran sus abonos. Mandar un pedido/cita a la papelera se lleva su factura si no tiene abonos; restaurarlo la trae de vuelta (el pedido/cita vuelve como Cancelado/Cancelada).
+- Dinero siempre con `formatMoney` de `src/lib/money.ts` ("RD$1,250.00"); `Intl` con es-DO salía "DOP" en Android.
+- El PDF de la factura detalla los artículos del pedido y toma WhatsApp/ubicación de "Textos de la web". Se guarda como JPG dentro del PDF (~100 KB).
+- Los productos de ejemplo se ponen una sola vez (`content.productsSeeded`); borrar todos los productos ya no los hace volver.
+- Correo y notificación de un pedido/cita nuevo se mandan al mismo tiempo (`Promise.allSettled`).

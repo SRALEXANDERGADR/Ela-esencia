@@ -10,7 +10,8 @@
 // nada: un fallo o falta de configuración en el correo nunca debe
 // interrumpir el registro del pedido/cita del cliente.
 
-const money = (cents: number) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(cents / 100)
+import { formatMoney as money } from './money'
+
 const shortDate = (value: string | Date) => new Intl.DateTimeFormat('es-DO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 
 type EmailOrder = {

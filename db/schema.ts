@@ -86,10 +86,9 @@ export const appointments = pgTable('appointments', {
 // permite registrar abonos parciales (saldo pendiente) igual que en
 // Alexander Perfiles/Ventas. El folio se genera al crearla.
 //
-// A propósito NO tiene `deletedAt`/papelera: una factura emitida es un
-// registro financiero y se conserva siempre. "Eliminar" una factura desde
-// el panel en realidad la marca como `status = 'Cancelada'`, nunca la
-// borra físicamente. Ver `cancelInvoice` en src/lib/store.ts.
+// "Anular" la marca como `status = 'Cancelada'` (sigue en Cobros). Además
+// se puede enviar a la papelera (`deletedAt`): 30 días para restaurarla y
+// luego se borra junto a sus abonos. La columna la crea `ensureSchema()`.
 // ───────────────────────────────────────────────────────────────────────
 export const invoices = pgTable('invoices', {
   id: serial('id').primaryKey(),
@@ -104,6 +103,7 @@ export const invoices = pgTable('invoices', {
   paid: integer('paid').notNull().default(0), // centavos abonados hasta ahora
   status: text('status').notNull().default('Pendiente'), // Pendiente, Abonado, Pagada, Cancelada
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at'), // papelera
 })
 
 // ───────────────────────────────────────────────────────────────────────

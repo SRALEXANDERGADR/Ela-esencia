@@ -11,6 +11,7 @@
 // imagen para que el cliente igual se quede con su factura.
 // ═══════════════════════════════════════════════════════════════════════
 import { jsPDF } from 'jspdf'
+import { formatMoney as money } from './money'
 
 export type InvoiceLike = {
   id: number
@@ -23,6 +24,8 @@ export type InvoiceLike = {
   paid: number
   status: string
   createdAt: string | Date
+  /** Artículos del pedido (opcional): si vienen, la factura los detalla uno por uno. */
+  lines?: Array<{ name: string; quantity: number; price: number }>
 }
 
 export type PaymentLike = {
@@ -33,9 +36,20 @@ export type PaymentLike = {
   createdAt: string | Date
 }
 
-const money = (cents: number) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(cents / 100)
 
 const longDate = (value: string | Date) => new Intl.DateTimeFormat('es-DO', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(value))
+
+// Datos del negocio que salen en la factura (vienen de "Textos de la web").
+let business = { whatsapp: '18298473618', location: 'Jarabacoa, República Dominicana' }
+export function setInvoiceBusiness(next: { whatsapp?: string; location?: string }) {
+  business = { whatsapp: next.whatsapp || business.whatsapp, location: next.location || business.location }
+}
+function prettyPhone(value: string) {
+  const d = value.replace(/\D/g, '')
+  if (d.length === 11 && d.startsWith('1')) return `+1 (${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`
+  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
+  return value
+}
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c] as string))
@@ -59,8 +73,8 @@ function buildInvoiceHtml(invoice: InvoiceLike): string {
         <div>
           <div style="font-size:24px;font-weight:bold;letter-spacing:.06em;color:#2b241c;">ELA</div>
           <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#b08c56;margin-top:2px;">La belleza de ser tú</div>
-          <div style="font-size:12px;color:#7a6d5c;margin-top:6px;">Jarabacoa, República Dominicana</div>
-          <div style="font-size:12px;color:#7a6d5c;">WhatsApp: +1 (829) 847-3618</div>
+          <div style="font-size:12px;color:#7a6d5c;margin-top:6px;">${escapeHtml(business.location)}</div>
+          <div style="font-size:12px;color:#7a6d5c;">WhatsApp: ${escapeHtml(prettyPhone(business.whatsapp))}</div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:20px;font-weight:bold;color:#8a5a35;letter-spacing:.05em;">FACTURA</div>
@@ -77,7 +91,7 @@ function buildInvoiceHtml(invoice: InvoiceLike): string {
         </div>
         <div style="text-align:right;">
           <div style="font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.06em;color:#a99a84;margin-bottom:6px;">Estado</div>
-          <div style="display:inline-block;font-size:12px;font-weight:bold;padding:5px 14px;border-radius:999px;${badge.estilo}">${badge.texto}</div>
+          <div style="display:inline-block;font-size:12px;line-height:14px;height:14px;font-weight:bold;padding:2px 14px 12px;border-radius:999px;${badge.estilo}">${badge.texto}</div>
         </div>
       </div>
 
@@ -89,10 +103,15 @@ function buildInvoiceHtml(invoice: InvoiceLike): string {
           </tr>
         </thead>
         <tbody>
+          ${invoice.lines?.length ? invoice.lines.map((line) => `
+          <tr>
+            <td style="padding:12px;border-bottom:1px solid #eee2cf;font-size:14px;">${line.quantity} × ${escapeHtml(line.name)}<br><span style="font-size:11px;color:#a99a84;">${money(line.price)} cada uno</span></td>
+            <td style="padding:12px;border-bottom:1px solid #eee2cf;font-size:14px;text-align:right;font-weight:bold;">${money(line.price * line.quantity)}</td>
+          </tr>`).join('') : `
           <tr>
             <td style="padding:14px 12px;border-bottom:1px solid #eee2cf;font-size:14px;">${escapeHtml(invoice.concept)}<br><span style="font-size:11px;color:#a99a84;">${origen}</span></td>
             <td style="padding:14px 12px;border-bottom:1px solid #eee2cf;font-size:14px;text-align:right;font-weight:bold;">${money(invoice.total)}</td>
-          </tr>
+          </tr>`}
           ${invoice.paid > 0 ? `
           <tr>
             <td style="padding:14px 12px;border-bottom:1px solid #eee2cf;font-size:14px;color:#15803d;">Abonos recibidos</td>
@@ -101,8 +120,8 @@ function buildInvoiceHtml(invoice: InvoiceLike): string {
         </tbody>
         <tfoot>
           <tr>
-            <td style="padding:14px 12px;text-align:right;font-size:13px;font-weight:bold;color:#7a6d5c;">${saldo > 0 ? 'Saldo pendiente' : 'Total pagado'}</td>
-            <td style="padding:14px 12px;text-align:right;font-size:18px;font-weight:bold;color:#8a5a35;">${money(saldo > 0 ? saldo : invoice.total)}</td>
+            <td style="padding:14px 12px;text-align:right;font-size:13px;font-weight:bold;color:#7a6d5c;">${invoice.status === 'Cancelada' ? 'Factura anulada' : saldo > 0 ? 'Saldo pendiente' : 'Total pagado'}</td>
+            <td style="padding:14px 12px;text-align:right;font-size:18px;font-weight:bold;color:#8a5a35;">${invoice.status === 'Cancelada' ? '—' : money(saldo > 0 ? saldo : invoice.total)}</td>
           </tr>
         </tfoot>
       </table>
@@ -122,7 +141,7 @@ function buildReceiptHtml(invoice: InvoiceLike, payment: PaymentLike): string {
         <div>
           <div style="font-size:24px;font-weight:bold;letter-spacing:.06em;color:#2b241c;">ELA</div>
           <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#b08c56;margin-top:2px;">La belleza de ser tú</div>
-          <div style="font-size:12px;color:#7a6d5c;margin-top:6px;">WhatsApp: +1 (829) 847-3618</div>
+          <div style="font-size:12px;color:#7a6d5c;margin-top:6px;">WhatsApp: ${escapeHtml(prettyPhone(business.whatsapp))}</div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:20px;font-weight:bold;color:#8a5a35;letter-spacing:.05em;">RECIBO DE PAGO</div>
@@ -217,7 +236,8 @@ function canvasToPdf(canvas: HTMLCanvasElement) {
   const pageWidth = pdf.internal.pageSize.getWidth()
   const imgWidth = pageWidth - 40
   const imgHeight = imgWidth * (canvas.height / canvas.width)
-  pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 20, 20, imgWidth, imgHeight)
+  // JPG en vez de PNG: el PDF pasa de ~4 MB a unos cientos de KB (se manda rápido por WhatsApp).
+  pdf.addImage(canvas.toDataURL('image/jpeg', 0.9), 'JPEG', 20, 20, imgWidth, imgHeight)
   return pdf
 }
 
@@ -259,7 +279,7 @@ async function shareDoc(html: string, fileNamePrefix: string, folio: string, sha
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url; a.download = nombreArchivo; a.click()
-    URL.revokeObjectURL(url)
+    setTimeout(() => URL.revokeObjectURL(url), 4000) // si se revoca enseguida, algunos teléfonos no alcanzan a guardarla
     return
   }
   // Último respaldo si ni siquiera se pudo generar la imagen.

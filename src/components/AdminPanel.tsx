@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangle, ArrowLeft, Ban, Bell, BellOff, BellRing, Boxes, Calendar, CalendarPlus, Check, CheckCircle2, ChevronRight, Clock, Download, Eye, EyeOff, FileText, Home, ImageOff, ImagePlus, LoaderCircle, LogOut, MapPin, MessageCircle, MoreHorizontal, Package, Pencil, PlusCircle, ReceiptText, RotateCcw, Save, Scissors, Search, Share2, ShoppingBag, Smartphone, Trash, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
-import { cancelInvoice, checkSession, deleteAppointment, deleteCustomer, deleteOrder, deleteProduct, getAdminData, getPushSetup, login, logout, removePushSubscription, savePushSubscription, sendTestPush, purgeAppointment, purgeCustomer, purgeOrder, purgeProduct, registerPayment, restoreAppointment, restoreCustomer, restoreOrder, restoreProduct, saveAppointmentAdmin, saveContent, saveCustomer, saveProduct, updateAppointmentStatus, updateOrderStatus } from '@/lib/store'
+import { cancelInvoice, checkSession, deleteAppointment, deleteCustomer, deleteInvoice, deleteOrder, deleteProduct, getAdminData, getPushSetup, login, logout, removePushSubscription, savePushSubscription, sendTestPush, purgeAppointment, purgeCustomer, purgeInvoice, purgeOrder, purgeProduct, registerPayment, restoreAppointment, restoreCustomer, restoreInvoice, restoreOrder, restoreProduct, saveAppointmentAdmin, saveContent, saveCustomer, saveProduct, updateAppointmentStatus, updateOrderStatus } from '@/lib/store'
 import type { InvoiceLike, PaymentLike } from '@/lib/invoice'
 import { compressImage } from '@/lib/image'
+import { formatMoney } from '@/lib/money'
 import { fromBase64Url } from '@/lib/push'
 
 type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
@@ -11,6 +12,7 @@ type Order = { id: number; orderNumber: string; customerId: number | null; custo
 type Appointment = { id: number; appointmentNumber: string; customerId: number | null; customerName: string; phone: string; email: string; serviceId: number | null; serviceName: string; price: number; date: string; time: string; notes: string; status: string; paymentStatus: string; createdAt: string | Date }
 type Customer = { id: number; name: string; email: string; phone: string; address: string; notes: string; createdAt: string | Date }
 type Invoice = InvoiceLike & { sourceId: number; customerId: number | null }
+type Doc = InvoiceLike
 type Payment = PaymentLike & { id: number; invoiceId: number }
 type TrashImage = { id: number; path: string; url: string; reason: string; deletedAt: string | Date; daysLeft: number }
 type TrashData = {
@@ -19,6 +21,7 @@ type TrashData = {
   appointments: Array<Appointment & { daysLeft: number }>
   customers: Array<Customer & { daysLeft: number }>
   images: TrashImage[]
+  invoices: Array<Invoice & { daysLeft: number }>
 }
 type AdminData = { products: Product[]; orders: Order[]; appointments: Appointment[]; customers: Customer[]; invoices: Invoice[]; payments: Payment[]; content: Record<string, string>; trash: TrashData }
 type Tab = 'resumen' | 'citas' | 'pedidos' | 'facturas' | 'catalogo' | 'clientes' | 'contenido' | 'app' | 'papelera'
@@ -26,6 +29,7 @@ const TAB_IDS: Tab[] = ['resumen', 'citas', 'pedidos', 'facturas', 'catalogo', '
 type CustomerDraft = { id?: number; name: string; email: string; phone: string; address: string; notes: string }
 type ProductDraft = { id?: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
 type AppointmentDraft = { name: string; phone: string; email: string; serviceId: number; date: string; time: string; notes: string }
+type TrashKind = 'product' | 'customer' | 'order' | 'appointment' | 'invoice'
 type Toast = { id: number; text: string; kind: 'ok' | 'error' }
 
 // Mensaje que el servidor lanza cuando un pedido/cita tiene una factura
@@ -36,7 +40,7 @@ const invoiceWarning = (message: string) => message.includes('factura relacionad
 const sessionExpired = (message: string) => message.includes('Debes iniciar sesión')
 const errorText = (error: unknown, fallback = 'No pudimos completar la acción.') => error instanceof Error ? error.message : fallback
 
-const money = (value: number) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(value / 100)
+const money = formatMoney
 const shortDate = (value: string | Date) => new Intl.DateTimeFormat('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
 // Fecha local (no UTC): con toISOString, después de las 8 p. m. en RD ya
 // salía la fecha de mañana.
@@ -73,6 +77,18 @@ const PAYMENT_STATUSES = ['Pendiente', 'Pagado', 'Reembolsado']
 // El módulo de facturas (jsPDF + html2canvas) pesa mucho: se carga solo
 // cuando de verdad se descarga o comparte una factura.
 const invoiceLib = () => import('@/lib/invoice')
+// WhatsApp y ubicación de "Textos de la web", para que salgan en la factura.
+let businessInfo: { whatsapp?: string; location?: string } = {}
+/** Genera/descarga/comparte una factura o recibo. Muestra un aviso si falla. */
+async function withInvoiceLib(task: (lib: Awaited<ReturnType<typeof invoiceLib>>) => Promise<void>) {
+  try {
+    const lib = await invoiceLib()
+    lib.setInvoiceBusiness(businessInfo)
+    await task(lib)
+  } catch {
+    alert('No pudimos generar el documento. Revisa el internet e intenta de nuevo.')
+  }
+}
 
 // ───────────────────────────────────────────────────────────────────────
 // APP "ELA Admin" Y NOTIFICACIONES — igual que en JB Tech Store. El panel
@@ -322,7 +338,8 @@ export function AdminPanel() {
 
   async function refresh() {
     const result = await getAdminData()
-    setData(result as AdminData)
+    setData(result as unknown as AdminData)
+    businessInfo = { whatsapp: result.content.whatsapp, location: result.content.location }
     setContentDraft(result.content)
     setContentDirty(false)
   }
@@ -483,15 +500,40 @@ export function AdminPanel() {
     setViewingOrder(null); setViewingAppointment(null)
   }
 
-  async function restoreItem(kind: 'product' | 'customer' | 'order' | 'appointment', id: number) {
-    const action = { product: restoreProduct, customer: restoreCustomer, order: restoreOrder, appointment: restoreAppointment }[kind]
-    await run(() => action({ data: id }), kind === 'order' ? 'Pedido restaurado como "Cancelado". Cambia su estado para retomarlo.' : 'Restaurado.')
+  async function restoreItem(kind: TrashKind, id: number) {
+    const action = { product: restoreProduct, customer: restoreCustomer, order: restoreOrder, appointment: restoreAppointment, invoice: restoreInvoice }[kind]
+    const message = kind === 'order' ? 'Pedido restaurado como "Cancelado". Cambia su estado para retomarlo.' : kind === 'appointment' ? 'Cita restaurada como "Cancelada". Cambia su estado para retomarla.' : 'Restaurado.'
+    await run(() => action({ data: id }), message)
   }
 
-  async function purgeItem(kind: 'product' | 'customer' | 'order' | 'appointment', id: number, label: string) {
+  async function purgeItem(kind: TrashKind, id: number, label: string) {
     if (!confirm(`¿Eliminar definitivamente ${label}? Esta acción no se puede deshacer.`)) return
-    const action = { product: purgeProduct, customer: purgeCustomer, order: purgeOrder, appointment: purgeAppointment }[kind]
+    const action = { product: purgeProduct, customer: purgeCustomer, order: purgeOrder, appointment: purgeAppointment, invoice: purgeInvoice }[kind]
     await run(() => action({ data: id }), 'Eliminado definitivamente.')
+  }
+
+  async function annulInvoice(invoice: Invoice) {
+    const message = invoice.paid > 0
+      ? `La factura ${invoice.folio} ya tiene ${money(invoice.paid)} en abonos. Anularla no borra ese historial, pero dejará de contar como saldo pendiente. ¿La anulas?`
+      : `¿Anular la factura ${invoice.folio}? Dejará de contar como saldo pendiente.`
+    if (!confirm(message)) return
+    await run(() => cancelInvoice({ data: { id: invoice.id, force: invoice.paid > 0 } }), 'Factura anulada.')
+  }
+
+  async function trashInvoice(invoice: Invoice) {
+    const message = invoice.paid > 0
+      ? `La factura ${invoice.folio} tiene ${money(invoice.paid)} en abonos. ¿Enviarla a la papelera de todas formas? Podrás restaurarla durante 30 días; después se borra con sus recibos.`
+      : `¿Enviar la factura ${invoice.folio} a la papelera? Podrás restaurarla durante 30 días.`
+    if (!confirm(message)) return
+    setViewingInvoice(null)
+    await run(() => deleteInvoice({ data: { id: invoice.id, force: invoice.paid > 0 } }), 'Factura enviada a la papelera.')
+  }
+
+  /** La factura con los artículos del pedido, para el PDF. */
+  function docFor(invoice: Invoice): Doc {
+    if (invoice.sourceType !== 'pedido') return invoice
+    const order = data?.orders.find((item) => item.id === invoice.sourceId)
+    return order ? { ...invoice, lines: order.items } : invoice
   }
 
   async function uploadImage(file: File, target: 'product' | 'hero') {
@@ -568,14 +610,21 @@ export function AdminPanel() {
   const monthPrefix = today.slice(0, 7)
   const openInvoices = data.invoices.filter((invoice) => invoice.status !== 'Cancelada')
   const pendingBalance = openInvoices.reduce((sum, invoice) => sum + Math.max(invoice.total - invoice.paid, 0), 0)
-  const collectedMonth = data.payments.filter((payment) => localIso(new Date(payment.createdAt)).startsWith(monthPrefix)).reduce((sum, payment) => sum + payment.amount, 0)
+  const visibleInvoiceIds = new Set(data.invoices.map((invoice) => invoice.id))
+  const collectedMonth = data.payments.filter((payment) => visibleInvoiceIds.has(payment.invoiceId) && localIso(new Date(payment.createdAt)).startsWith(monthPrefix)).reduce((sum, payment) => sum + payment.amount, 0)
   const todayAppointments = data.appointments.filter((item) => item.date === today && item.status !== 'Cancelada').sort((a, b) => a.time.localeCompare(b.time))
   const upcomingAppointments = data.appointments.filter((item) => item.date >= today && item.status !== 'Cancelada' && item.status !== 'Completada').sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
   const toConfirm = upcomingAppointments.filter((item) => item.status === 'Pendiente').length
   const openOrders = data.orders.filter((order) => order.status === 'Pendiente' || order.status === 'Preparando')
   const lowStockProducts = data.products.filter((product) => product.kind === 'producto' && product.active && product.stock <= 5)
   const services = data.products.filter((product) => product.kind === 'servicio')
-  const trashCount = data.trash.products.length + data.trash.orders.length + data.trash.appointments.length + data.trash.customers.length
+  const trashCount = data.trash.products.length + data.trash.orders.length + data.trash.appointments.length + data.trash.customers.length + data.trash.invoices.length
+  // Las ventanas de detalle muestran siempre los datos al día (después de
+  // cambiar un estado o registrar un abono, se ve el cambio sin cerrarlas).
+  const liveOrder = viewingOrder ? data.orders.find((item) => item.id === viewingOrder.id) ?? null : null
+  const liveAppointment = viewingAppointment ? data.appointments.find((item) => item.id === viewingAppointment.id) ?? null : null
+  const liveInvoice = viewingInvoice ? data.invoices.find((item) => item.id === viewingInvoice.id) ?? null : null
+  const invoiceBoxFor = (invoice: Invoice | null) => invoice ? <InvoiceBox invoice={invoice} doc={docFor(invoice)} payments={paymentsFor(invoice.id)} onPay={() => { setError(''); setPayingInvoice(invoice) }} /> : <p className="invoice-summary">Este registro no tiene factura.</p>
   const newBooking = (): AppointmentDraft => ({ name: '', phone: '', email: '', serviceId: services[0]?.id ?? 0, date: today, time: '10:00', notes: '' })
 
   const tabs: { id: Tab; label: string; hint: string; group: string; icon: React.ReactNode; badge?: number }[] = [
@@ -595,6 +644,8 @@ export function AdminPanel() {
 
   // Funciones (no componentes) para que el buscador no pierda el foco al escribir.
   const chips = (options: Array<[string, string, number?]>) => <div className="filter-chips">{options.map(([value, label, count]) => <button key={value} className={filter === value ? 'active' : ''} onClick={() => setFilter(value)}>{label}{count !== undefined && <b>{count}</b>}</button>)}</div>
+  const orderCard = (order: Order) => <OrderCard key={order.id} order={order} invoice={findInvoiceFor('pedido', order.id)} onChange={(status, paymentStatus) => changeStatus('order', order, status, paymentStatus)} onOpen={() => setViewingOrder(order)} onInvoice={(invoice) => setViewingInvoice(invoice)} onDelete={() => sendToTrash('order', order, order.orderNumber)} />
+  const appointmentCard = (item: Appointment) => <AppointmentCard key={item.id} item={item} invoice={findInvoiceFor('cita', item.id)} onChange={(status, paymentStatus) => changeStatus('appointment', item, status, paymentStatus)} onOpen={() => setViewingAppointment(item)} onInvoice={(invoice) => setViewingInvoice(invoice)} onDelete={() => sendToTrash('appointment', item, item.appointmentNumber)} />
   const searchBox = (placeholder: string) => <label className="search-field"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={placeholder} />{query && <button type="button" aria-label="Borrar búsqueda" onClick={() => setQuery('')}><X size={14} /></button>}</label>
 
   return <div className="admin-shell">
@@ -647,11 +698,11 @@ export function AdminPanel() {
         <div className="dashboard-columns">
           <section className="admin-card">
             <div className="card-title"><div><span>AGENDA</span><h2>Próximas citas</h2></div><button onClick={() => goTo('citas')}>Ver todas</button></div>
-            <div className="agenda-list">{upcomingAppointments.slice(0, 6).map((item) => <AgendaRow key={item.id} item={item} onOpen={() => setViewingAppointment(item)} />)}{!upcomingAppointments.length && <div className="empty-admin small"><Calendar /><p>No hay citas próximas.</p></div>}</div>
+            <div className="record-list compact">{upcomingAppointments.slice(0, 3).map(appointmentCard)}</div>{!upcomingAppointments.length && <div className="empty-admin small"><Calendar /><p>No hay citas próximas.</p></div>}
           </section>
           <section className="admin-card">
             <div className="card-title"><div><span>PEDIDOS</span><h2>Por atender</h2></div><button onClick={() => goTo('pedidos')}>Ver todos</button></div>
-            <div className="agenda-list">{openOrders.slice(0, 6).map((order) => <button key={order.id} className="agenda-row" onClick={() => setViewingOrder(order)}><div className="agenda-when"><strong>{shortDate(order.createdAt).split(' ').slice(0, 2).join(' ')}</strong><small>{order.items.reduce((sum, line) => sum + line.quantity, 0)} art.</small></div><div className="agenda-info"><strong>{order.customerName}</strong><small>{order.items.map((line) => line.name).join(', ')}</small></div><div className="agenda-side"><strong>{money(order.total)}</strong><span className={`status-pill status-${order.status.toLowerCase()}`}>{order.status}</span></div></button>)}{!openOrders.length && <div className="empty-admin small"><Package /><p>No hay pedidos pendientes.</p></div>}</div>
+            <div className="record-list compact">{openOrders.slice(0, 3).map(orderCard)}</div>{!openOrders.length && <div className="empty-admin small"><Package /><p>No hay pedidos pendientes.</p></div>}
           </section>
         </div>
       </div>}
@@ -660,45 +711,22 @@ export function AdminPanel() {
         <div className="card-title"><div><span>AGENDA</span><h2>{filteredAppointments.length} {filteredAppointments.length === 1 ? 'cita' : 'citas'}</h2></div><button className="admin-action" disabled={!services.length} onClick={() => setBookingDraft(newBooking())}><PlusCircle />Nueva cita</button></div>
         {chips([['', 'Próximas'], ['hoy', 'Hoy', todayAppointments.length], ['pendientes', 'Por confirmar', toConfirm], ['pasadas', 'Pasadas y cerradas'], ['todas', 'Todas']])}
         {searchBox("Buscar por clienta, servicio, teléfono o número…")}
-        <AppointmentTable appointments={filteredAppointments} onChange={(item, status, paymentStatus) => changeStatus('appointment', item, status, paymentStatus)} onOpen={setViewingAppointment} />
+        <div className="record-list">{filteredAppointments.map(appointmentCard)}</div>{!filteredAppointments.length && <div className="empty-admin">No hay citas en esta lista.</div>}
       </section>}
 
       {tab === 'pedidos' && <section className="admin-card">
         <div className="card-title"><div><span>PRODUCTOS VENDIDOS</span><h2>{filteredOrders.length} {filteredOrders.length === 1 ? 'pedido' : 'pedidos'}</h2></div></div>
         {chips([['', 'Todos'], ['abiertos', 'Por atender', openOrders.length], ['sinpagar', 'Sin pagar'], ['enviados', 'Enviados y entregados'], ['cancelados', 'Cancelados']])}
         {searchBox("Buscar por clienta, teléfono o número de pedido…")}
-        <OrderTable orders={filteredOrders} onChange={(order, status, paymentStatus) => changeStatus('order', order, status, paymentStatus)} onOpen={setViewingOrder} />
+        <div className="record-list">{filteredOrders.map(orderCard)}</div>{!filteredOrders.length && <div className="empty-admin">No hay pedidos en esta lista.</div>}
       </section>}
 
       {tab === 'facturas' && <section className="admin-card">
         <div className="card-title"><div><span>COBRANZA</span><h2>{filteredInvoices.length} {filteredInvoices.length === 1 ? 'factura' : 'facturas'}</h2></div></div>
-        <p className="section-help">Cada pedido y cada cita crea su factura sola. Aquí registras los abonos (pagos parciales) y descargas o compartes la factura. Si marcas un pedido o cita como "Pagado", la factura se salda sola.</p>
+        <p className="section-help">Cada pedido y cada cita crea su factura sola. Desde cada tarjeta puedes abonar, descargar, compartir, anular o enviar a la papelera. Si marcas un pedido o cita como "Pagado", la factura se salda sola.</p>
         {chips([['', 'Todas'], ['porcobrar', 'Por cobrar', openInvoices.filter((invoice) => invoice.paid < invoice.total).length], ['pagadas', 'Pagadas'], ['anuladas', 'Anuladas']])}
         {searchBox("Buscar por folio, clienta o concepto…")}
-        <div className="table-wrap"><table><thead><tr><th>Folio</th><th>Cliente</th><th>Concepto</th><th>Fecha</th><th>Total</th><th>Abonado</th><th>Saldo</th><th>Estado</th><th /></tr></thead><tbody>{filteredInvoices.map((invoice) => {
-          const saldo = Math.max(invoice.total - invoice.paid, 0)
-          return <tr key={invoice.id}>
-            <td data-label="Folio"><strong>{invoice.folio}</strong></td>
-            <td data-label="Cliente">{invoice.customerName}<small>{invoice.phone}</small></td>
-            <td data-label="Concepto">{invoice.concept}</td>
-            <td data-label="Fecha">{shortDate(invoice.createdAt)}</td>
-            <td data-label="Total">{money(invoice.total)}</td>
-            <td data-label="Abonado">{money(invoice.paid)}</td>
-            <td data-label="Saldo">{invoice.status === 'Cancelada' ? <span className="muted-text">Anulada</span> : <strong className={saldo > 0 ? 'balance-due' : 'balance-clear'}>{money(saldo)}</strong>}</td>
-            <td data-label="Estado"><span className={`status-pill status-${invoice.status.toLowerCase()}`}>{invoice.status}</span></td>
-            <td className="col-actions"><div className="row-actions">
-              {saldo > 0 && invoice.status !== 'Cancelada' && <button className="labeled" title="Registrar abono" onClick={() => { setError(''); setPayingInvoice(invoice) }}><Wallet /><span>Abonar</span></button>}
-              <button title="Ver factura" onClick={() => setViewingInvoice(invoice)}><ReceiptText /></button>
-              {invoice.status !== 'Cancelada' && <button title="Anular factura" onClick={async () => {
-                const message = invoice.paid > 0
-                  ? `La factura ${invoice.folio} ya tiene ${money(invoice.paid)} en abonos registrados. Anularla no borra ese historial, pero la factura pasará a estado "Cancelada" y dejará de contar como saldo pendiente. ¿Confirmas la anulación?`
-                  : `¿Anular la factura ${invoice.folio}?`
-                if (!confirm(message)) return
-                await run(() => cancelInvoice({ data: { id: invoice.id, force: invoice.paid > 0 } }), 'Factura anulada.')
-              }}><Ban /></button>}
-            </div></td>
-          </tr>
-        })}</tbody></table>{!filteredInvoices.length && <div className="empty-admin">No hay facturas en esta lista.</div>}</div>
+        <div className="record-list">{filteredInvoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} doc={docFor(invoice)} onPay={() => { setError(''); setPayingInvoice(invoice) }} onOpen={() => setViewingInvoice(invoice)} onAnnul={() => annulInvoice(invoice)} onDelete={() => trashInvoice(invoice)} />)}</div>{!filteredInvoices.length && <div className="empty-admin">No hay facturas en esta lista.</div>}
       </section>}
 
       {tab === 'catalogo' && <section className="admin-card">
@@ -778,7 +806,7 @@ export function AdminPanel() {
       <button className="primary-button full" disabled={busy}><Save />{busy ? 'Guardando...' : 'Agendar cita'}</button>
     </form></div>}
 
-    {payingInvoice && <div className="modal-wrap" onClick={() => setPayingInvoice(null)}><form className="product-modal" onSubmit={handlePayment} onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setPayingInvoice(null)} aria-label="Cerrar">×</button><span>ABONO</span><h2>Registrar abono</h2>
+    {payingInvoice && <div className="modal-wrap modal-top" onClick={() => setPayingInvoice(null)}><form className="product-modal" onSubmit={handlePayment} onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setPayingInvoice(null)} aria-label="Cerrar">×</button><span>ABONO</span><h2>Registrar abono</h2>
       <p className="invoice-summary">{payingInvoice.folio} · {payingInvoice.customerName} · Saldo pendiente: <strong>{money(Math.max(payingInvoice.total - payingInvoice.paid, 0))}</strong></p>
       {error && <p className="form-error">{error}</p>}
       <div className="form-grid">
@@ -789,62 +817,124 @@ export function AdminPanel() {
       <button className="primary-button full" disabled={busy}><Save />{busy ? 'Guardando...' : 'Registrar abono'}</button>
     </form></div>}
 
-    {viewingOrder && <OrderDetail order={viewingOrder} invoice={findInvoiceFor('pedido', viewingOrder.id)} onClose={() => setViewingOrder(null)} onInvoice={(invoice) => { setViewingOrder(null); setViewingInvoice(invoice) }} onDelete={() => sendToTrash('order', viewingOrder, viewingOrder.orderNumber)} onChange={async (status, paymentStatus) => { await changeStatus('order', viewingOrder, status, paymentStatus); setViewingOrder(null) }} />}
-    {viewingAppointment && <AppointmentDetail item={viewingAppointment} invoice={findInvoiceFor('cita', viewingAppointment.id)} onClose={() => setViewingAppointment(null)} onInvoice={(invoice) => { setViewingAppointment(null); setViewingInvoice(invoice) }} onDelete={() => sendToTrash('appointment', viewingAppointment, viewingAppointment.appointmentNumber)} onChange={async (status, paymentStatus) => { await changeStatus('appointment', viewingAppointment, status, paymentStatus); setViewingAppointment(null) }} />}
-    {viewingInvoice && <InvoiceViewer invoice={viewingInvoice} payments={paymentsFor(viewingInvoice.id)} onClose={() => setViewingInvoice(null)} onPay={() => { setError(''); setPayingInvoice(viewingInvoice); setViewingInvoice(null) }} />}
+    {liveOrder && <OrderDetail order={liveOrder} invoiceBox={invoiceBoxFor(findInvoiceFor('pedido', liveOrder.id))} onClose={() => setViewingOrder(null)} onDelete={() => sendToTrash('order', liveOrder, liveOrder.orderNumber)} onChange={(status, paymentStatus) => changeStatus('order', liveOrder, status, paymentStatus)} />}
+    {liveAppointment && <AppointmentDetail item={liveAppointment} invoiceBox={invoiceBoxFor(findInvoiceFor('cita', liveAppointment.id))} onClose={() => setViewingAppointment(null)} onDelete={() => sendToTrash('appointment', liveAppointment, liveAppointment.appointmentNumber)} onChange={(status, paymentStatus) => changeStatus('appointment', liveAppointment, status, paymentStatus)} />}
+    {liveInvoice && <div className="modal-wrap" onClick={() => setViewingInvoice(null)}><div className="modal-card detail-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close icon-button" onClick={() => setViewingInvoice(null)} aria-label="Cerrar"><X /></button>
+      <span className="drawer-kicker">{liveInvoice.sourceType === 'cita' ? 'FACTURA DE CITA' : 'FACTURA DE PEDIDO'}</span>
+      <h2>{liveInvoice.customerName}</h2>
+      <p className="invoice-summary">{liveInvoice.concept}</p>
+      {docFor(liveInvoice).lines && <div className="detail-lines">{docFor(liveInvoice).lines!.map((line, index) => <div key={index}><span>{line.quantity} × {line.name}</span><strong>{money(line.price * line.quantity)}</strong></div>)}</div>}
+      {invoiceBoxFor(liveInvoice)}
+      <div className="detail-footer">{liveInvoice.status !== 'Cancelada' && <button className="text-muted-btn" onClick={() => annulInvoice(liveInvoice)}><Ban size={15} />Anular factura</button>}<button className="text-danger" onClick={() => trashInvoice(liveInvoice)}><Trash2 size={15} />Enviar a la papelera</button></div>
+    </div></div>}
   </div>
-}
-
-function AgendaRow({ item, onOpen }: { item: Appointment; onOpen: () => void }) {
-  return <button className="agenda-row" onClick={onOpen}>
-    <div className="agenda-when"><strong>{niceDate(item.date)}</strong><small>{niceTime(item.time)}</small></div>
-    <div className="agenda-info"><strong>{item.customerName}</strong><small>{item.serviceName}</small></div>
-    <div className="agenda-side"><strong>{money(item.price)}</strong><span className={`status-pill status-${item.status.toLowerCase()}`}>{item.status}</span></div>
-  </button>
 }
 
 function StatusSelect({ value, options, onChange, label }: { value: string; options: string[]; onChange: (value: string) => void; label: string }) {
   return <select aria-label={label} className={`status-select status-${value.toLowerCase()}`} value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option}>{option}</option>)}</select>
 }
 
-function OrderTable({ orders, onChange, onOpen }: { orders: Order[]; onChange: (order: Order, status: string, paymentStatus: string) => void; onOpen: (order: Order) => void }) {
-  return <div className="table-wrap"><table><thead><tr><th>Pedido</th><th>Cliente</th><th>Artículos</th><th>Estado</th><th>Pago</th><th>Total</th><th /></tr></thead><tbody>{orders.map((order) => <tr key={order.id}>
-    <td data-label="Pedido"><strong>{order.orderNumber}</strong><small>{shortDate(order.createdAt)}</small></td>
-    <td data-label="Cliente">{order.customerName}<small>{order.phone}</small></td>
-    <td data-label="Artículos">{order.items.map((line) => `${line.quantity} × ${line.name}`).join(', ')}</td>
-    <td data-label="Estado"><StatusSelect label="Estado del pedido" value={order.status} options={ORDER_STATUSES} onChange={(status) => onChange(order, status, order.paymentStatus)} /></td>
-    <td data-label="Pago"><StatusSelect label="Pago del pedido" value={order.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(order, order.status, paymentStatus)} /></td>
-    <td data-label="Total"><strong>{money(order.total)}</strong></td>
-    <td className="col-actions"><div className="row-actions"><ContactButton phone={order.phone} text={`Hola ${order.customerName.split(' ')[0]}, te escribimos de ELA sobre tu pedido ${order.orderNumber}.`} /><button className="labeled" title="Ver detalle" onClick={() => onOpen(order)}><Eye /><span>Ver</span></button></div></td>
-  </tr>)}</tbody></table>{!orders.length && <div className="empty-admin">No hay pedidos en esta lista.</div>}</div>
+/** Estado de la factura en pocas palabras, para la tarjeta. */
+function invoiceNote(invoice: Invoice | null) {
+  if (!invoice) return null
+  const saldo = Math.max(invoice.total - invoice.paid, 0)
+  const text = invoice.status === 'Cancelada' ? 'anulada' : saldo === 0 ? 'pagada' : invoice.paid > 0 ? `abonado ${money(invoice.paid)} · falta ${money(saldo)}` : `por cobrar ${money(saldo)}`
+  return <p className={`record-invoice ${invoice.status === 'Cancelada' ? '' : saldo > 0 ? 'due' : 'clear'}`}><ReceiptText size={14} />Factura {text}</p>
 }
 
-function AppointmentTable({ appointments, onChange, onOpen }: { appointments: Appointment[]; onChange: (item: Appointment, status: string, paymentStatus: string) => void; onOpen: (item: Appointment) => void }) {
-  return <div className="table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Clienta</th><th>Servicio</th><th>Estado</th><th>Pago</th><th>Precio</th><th /></tr></thead><tbody>{appointments.map((item) => <tr key={item.id}>
-    <td data-label="Fecha y hora"><strong>{niceDate(item.date)} · {niceTime(item.time)}</strong><small>{item.appointmentNumber}</small></td>
-    <td data-label="Clienta">{item.customerName}<small>{item.phone}</small></td>
-    <td data-label="Servicio">{item.serviceName}{item.notes && <small>Nota: {item.notes}</small>}</td>
-    <td data-label="Estado"><StatusSelect label="Estado de la cita" value={item.status} options={APPOINTMENT_STATUSES} onChange={(status) => onChange(item, status, item.paymentStatus)} /></td>
-    <td data-label="Pago"><StatusSelect label="Pago de la cita" value={item.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(item, item.status, paymentStatus)} /></td>
-    <td data-label="Precio"><strong>{money(item.price)}</strong></td>
-    <td className="col-actions"><div className="row-actions"><ContactButton phone={item.phone} text={`Hola ${item.customerName.split(' ')[0]}, te escribimos de ELA para confirmar tu cita de ${item.serviceName} el ${niceDate(item.date).toLowerCase()} a las ${niceTime(item.time)}.`} /><button className="labeled" title="Ver detalle" onClick={() => onOpen(item)}><Eye /><span>Ver</span></button></div></td>
-  </tr>)}</tbody></table>{!appointments.length && <div className="empty-admin">No hay citas en esta lista.</div>}</div>
-}
-
-function ContactButton({ phone, text }: { phone: string; text: string }) {
-  const href = waLink(phone, text)
-  if (!href) return null
-  return <a className="wa-button" href={href} target="_blank" rel="noreferrer" title="Escribir por WhatsApp"><MessageCircle /></a>
-}
-
-function DetailFooter({ invoice, onInvoice, onDelete }: { invoice: Invoice | null; onInvoice: (invoice: Invoice) => void; onDelete: () => void }) {
-  return <div className="detail-footer">
-    {invoice && <button className="admin-action" onClick={() => onInvoice(invoice)}><ReceiptText />Factura {invoice.folio}</button>}
-    <button className="text-danger" onClick={onDelete}><Trash2 size={15} />Enviar a la papelera</button>
+function CardActions({ phone, waText, onOpen, onInvoice, invoice, onDelete }: { phone: string; waText: string; onOpen: () => void; onInvoice: (invoice: Invoice) => void; invoice: Invoice | null; onDelete: () => void }) {
+  const wa = waLink(phone, waText)
+  return <div className="card-actions four">
+    {wa ? <a className="act wa" href={wa} target="_blank" rel="noreferrer"><MessageCircle />WhatsApp</a> : <span className="act disabled"><MessageCircle />WhatsApp</span>}
+    <button className="act" onClick={onOpen}><Eye />Ver</button>
+    <button className="act" disabled={!invoice} onClick={() => invoice && onInvoice(invoice)}><ReceiptText />Factura</button>
+    <button className="act danger" onClick={onDelete}><Trash2 />Borrar</button>
   </div>
 }
 
-function OrderDetail({ order, invoice, onClose, onInvoice, onDelete, onChange }: { order: Order; invoice: Invoice | null; onClose: () => void; onInvoice: (invoice: Invoice) => void; onDelete: () => void; onChange: (status: string, paymentStatus: string) => void }) {
+function OrderCard({ order, invoice, onChange, onOpen, onInvoice, onDelete }: { order: Order; invoice: Invoice | null; onChange: (status: string, paymentStatus: string) => void; onOpen: () => void; onInvoice: (invoice: Invoice) => void; onDelete: () => void }) {
+  return <article className={`record-card ${order.status === 'Cancelado' ? 'is-closed' : ''}`}>
+    <header className="record-head">
+      <div><strong className="record-name">{order.customerName}</strong><small>{order.orderNumber} · {shortDate(order.createdAt)}</small></div>
+      <strong className="record-amount">{money(order.total)}</strong>
+    </header>
+    <ul className="record-lines">{order.items.map((line, index) => <li key={index}><span>{line.quantity} × {line.name}</span><b>{money(line.price * line.quantity)}</b></li>)}</ul>
+    {order.address && <p className="record-meta nowrap"><MapPin size={14} /><span>{order.address}</span></p>}
+    <div className="record-status"><label>Estado<StatusSelect label="Estado del pedido" value={order.status} options={ORDER_STATUSES} onChange={(status) => onChange(status, order.paymentStatus)} /></label><label>Pago<StatusSelect label="Pago del pedido" value={order.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(order.status, paymentStatus)} /></label></div>
+    {invoiceNote(invoice)}
+    <CardActions phone={order.phone} waText={`Hola ${order.customerName.split(' ')[0]}, te escribimos de ELA sobre tu pedido ${order.orderNumber}.`} onOpen={onOpen} onInvoice={onInvoice} invoice={invoice} onDelete={onDelete} />
+  </article>
+}
+
+function AppointmentCard({ item, invoice, onChange, onOpen, onInvoice, onDelete }: { item: Appointment; invoice: Invoice | null; onChange: (status: string, paymentStatus: string) => void; onOpen: () => void; onInvoice: (invoice: Invoice) => void; onDelete: () => void }) {
+  return <article className={`record-card ${item.status === 'Cancelada' ? 'is-closed' : ''}`}>
+    <header className="record-head">
+      <div className="record-when"><strong>{niceDate(item.date)}</strong><small>{niceTime(item.time)}</small></div>
+      <div className="record-who"><strong className="record-name">{item.customerName}</strong><small>{item.serviceName}</small></div>
+      <strong className="record-amount">{money(item.price)}</strong>
+    </header>
+    {item.notes && <p className="record-meta">Nota: {item.notes}</p>}
+    <div className="record-status"><label>Estado<StatusSelect label="Estado de la cita" value={item.status} options={APPOINTMENT_STATUSES} onChange={(status) => onChange(status, item.paymentStatus)} /></label><label>Pago<StatusSelect label="Pago de la cita" value={item.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(item.status, paymentStatus)} /></label></div>
+    {invoiceNote(invoice)}
+    <CardActions phone={item.phone} waText={`Hola ${item.customerName.split(' ')[0]}, te escribimos de ELA para confirmar tu cita de ${item.serviceName} el ${niceDate(item.date).toLowerCase()} a las ${niceTime(item.time)}.`} onOpen={onOpen} onInvoice={onInvoice} invoice={invoice} onDelete={onDelete} />
+  </article>
+}
+
+/** Botones Descargar / Compartir de una factura (y su propio "trabajando…"). */
+function DocButtons({ doc }: { doc: Doc }) {
+  const [working, setWorking] = useState<'' | 'pdf' | 'share'>('')
+  const go = async (kind: 'pdf' | 'share') => { setWorking(kind); await withInvoiceLib((lib) => kind === 'pdf' ? lib.downloadInvoicePdf(doc) : lib.shareInvoice(doc)); setWorking('') }
+  return <>
+    <button className="act" disabled={!!working} onClick={() => go('pdf')}>{working === 'pdf' ? <LoaderCircle className="spin" /> : <Download />}Descargar</button>
+    <button className="act" disabled={!!working} onClick={() => go('share')}>{working === 'share' ? <LoaderCircle className="spin" /> : <Share2 />}Compartir</button>
+  </>
+}
+
+function InvoiceCard({ invoice, doc, onPay, onOpen, onAnnul, onDelete }: { invoice: Invoice; doc: Doc; onPay: () => void; onOpen: () => void; onAnnul: () => void; onDelete: () => void }) {
+  const saldo = Math.max(invoice.total - invoice.paid, 0)
+  const active = invoice.status !== 'Cancelada'
+  return <article className={`record-card ${active ? '' : 'is-closed'}`}>
+    <header className="record-head">
+      <div><strong className="record-name">{invoice.customerName}</strong><small>{invoice.folio} · {shortDate(invoice.createdAt)}</small></div>
+      <span className={`status-pill status-${invoice.status.toLowerCase()}`}>{invoice.status}</span>
+    </header>
+    <p className="record-meta">{invoice.concept}</p>
+    <div className="record-figures">
+      <div><span>Total</span><strong>{money(invoice.total)}</strong></div>
+      <div><span>Abonado</span><strong>{money(invoice.paid)}</strong></div>
+      <div><span>Saldo</span><strong className={!active ? 'muted-text' : saldo > 0 ? 'balance-due' : 'balance-clear'}>{active ? money(saldo) : 'Anulada'}</strong></div>
+    </div>
+    <div className="card-actions">
+      {active && saldo > 0 && <button className="act primary" onClick={onPay}><Wallet />Abonar</button>}
+      <button className="act" onClick={onOpen}><Eye />Ver</button>
+      <DocButtons doc={doc} />
+      {active && <button className="act" onClick={onAnnul}><Ban />Anular</button>}
+      <button className="act danger" onClick={onDelete}><Trash2 />Borrar</button>
+    </div>
+  </article>
+}
+
+/** La factura dentro de una ventana: números, abonar, descargar,
+ * compartir e historial de abonos con sus recibos. */
+function InvoiceBox({ invoice, doc, payments, onPay }: { invoice: Invoice; doc: Doc; payments: Payment[]; onPay: () => void }) {
+  const saldo = Math.max(invoice.total - invoice.paid, 0)
+  const active = invoice.status !== 'Cancelada'
+  return <div className="invoice-box">
+    <div className="invoice-box-head"><span>Factura {invoice.folio}</span><span className={`status-pill status-${invoice.status.toLowerCase()}`}>{invoice.status}</span></div>
+    <div className="record-figures">
+      <div><span>Total</span><strong>{money(invoice.total)}</strong></div>
+      <div><span>Abonado</span><strong>{money(invoice.paid)}</strong></div>
+      <div><span>Saldo</span><strong className={!active ? 'muted-text' : saldo > 0 ? 'balance-due' : 'balance-clear'}>{active ? money(saldo) : 'Anulada'}</strong></div>
+    </div>
+    <div className="card-actions">
+      {active && saldo > 0 && <button className="act primary" onClick={onPay}><Wallet />Abonar</button>}
+      <DocButtons doc={doc} />
+    </div>
+    {payments.length > 0 && <div className="payment-history"><h3>Abonos</h3>{payments.map((payment) => <div key={payment.id} className="payment-row"><div><strong>{money(payment.amount)}</strong><span>{payment.method} · {shortDate(payment.createdAt)}{payment.note && ` · ${payment.note}`}</span></div><div className="row-actions"><button title="Descargar recibo" onClick={() => withInvoiceLib((lib) => lib.downloadReceiptPdf(doc, payment))}><Download size={15} /></button><button title="Compartir recibo" onClick={() => withInvoiceLib((lib) => lib.shareReceipt(doc, payment))}><Share2 size={15} /></button></div></div>)}</div>}
+  </div>
+}
+
+function OrderDetail({ order, invoiceBox, onClose, onDelete, onChange }: { order: Order; invoiceBox: React.ReactNode; onClose: () => void; onDelete: () => void; onChange: (status: string, paymentStatus: string) => void }) {
   const wa = waLink(order.phone, `Hola ${order.customerName.split(' ')[0]}, te escribimos de ELA sobre tu pedido ${order.orderNumber}.`)
   return <div className="modal-wrap" onClick={onClose}><div className="modal-card detail-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close icon-button" onClick={onClose} aria-label="Cerrar"><X /></button>
     <span className="drawer-kicker">PEDIDO {order.orderNumber} · {shortDate(order.createdAt)}</span>
@@ -853,11 +943,12 @@ function OrderDetail({ order, invoice, onClose, onInvoice, onDelete, onChange }:
     {wa && <a className="wa-cta" href={wa} target="_blank" rel="noreferrer"><MessageCircle size={18} />Escribirle por WhatsApp</a>}
     <div className="detail-lines">{order.items.map((line, index) => <div key={index}><span>{line.quantity} × {line.name}</span><strong>{money(line.price * line.quantity)}</strong></div>)}<div className="detail-total"><span>Total</span><strong>{money(order.total)}</strong></div></div>
     <div className="form-grid detail-status"><label>Estado<StatusSelect label="Estado" value={order.status} options={ORDER_STATUSES} onChange={(status) => onChange(status, order.paymentStatus)} /></label><label>Pago<StatusSelect label="Pago" value={order.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(order.status, paymentStatus)} /></label></div>
-    <DetailFooter invoice={invoice} onInvoice={onInvoice} onDelete={onDelete} />
+    {invoiceBox}
+    <div className="detail-footer"><button className="text-danger" onClick={onDelete}><Trash2 size={15} />Enviar pedido a la papelera</button></div>
   </div></div>
 }
 
-function AppointmentDetail({ item, invoice, onClose, onInvoice, onDelete, onChange }: { item: Appointment; invoice: Invoice | null; onClose: () => void; onInvoice: (invoice: Invoice) => void; onDelete: () => void; onChange: (status: string, paymentStatus: string) => void }) {
+function AppointmentDetail({ item, invoiceBox, onClose, onDelete, onChange }: { item: Appointment; invoiceBox: React.ReactNode; onClose: () => void; onDelete: () => void; onChange: (status: string, paymentStatus: string) => void }) {
   const wa = waLink(item.phone, `Hola ${item.customerName.split(' ')[0]}, te escribimos de ELA para confirmar tu cita de ${item.serviceName} el ${niceDate(item.date).toLowerCase()} a las ${niceTime(item.time)}.`)
   return <div className="modal-wrap" onClick={onClose}><div className="modal-card detail-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close icon-button" onClick={onClose} aria-label="Cerrar"><X /></button>
     <span className="drawer-kicker">CITA {item.appointmentNumber}</span>
@@ -866,32 +957,8 @@ function AppointmentDetail({ item, invoice, onClose, onInvoice, onDelete, onChan
     {wa && <a className="wa-cta" href={wa} target="_blank" rel="noreferrer"><MessageCircle size={18} />Confirmar por WhatsApp</a>}
     <div className="detail-lines"><div><span>{item.serviceName}</span><strong>{money(item.price)}</strong></div><div><span>Fecha</span><strong>{niceDate(item.date)} · {niceTime(item.time)}</strong></div>{item.notes && <div className="detail-note"><span>Notas de la clienta</span><p>{item.notes}</p></div>}</div>
     <div className="form-grid detail-status"><label>Estado<StatusSelect label="Estado" value={item.status} options={APPOINTMENT_STATUSES} onChange={(status) => onChange(status, item.paymentStatus)} /></label><label>Pago<StatusSelect label="Pago" value={item.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(item.status, paymentStatus)} /></label></div>
-    <DetailFooter invoice={invoice} onInvoice={onInvoice} onDelete={onDelete} />
-  </div></div>
-}
-
-function InvoiceViewer({ invoice, payments, onClose, onPay }: { invoice: Invoice; payments: Payment[]; onClose: () => void; onPay: () => void }) {
-  const [working, setWorking] = useState(false)
-  const saldo = Math.max(invoice.total - invoice.paid, 0)
-  const act = async (task: (lib: Awaited<ReturnType<typeof invoiceLib>>) => Promise<void>) => {
-    setWorking(true)
-    try { await task(await invoiceLib()) } catch { alert('No pudimos generar el documento. Intenta de nuevo.') } finally { setWorking(false) }
-  }
-  return <div className="modal-wrap" onClick={onClose}><div className="modal-card invoice-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close icon-button" onClick={onClose} aria-label="Cerrar"><X /></button>
-    <span className="drawer-kicker">FACTURA {invoice.folio}</span>
-    <h2>{invoice.customerName}</h2>
-    <p className="invoice-summary">{invoice.concept} · <span className={`status-pill status-${invoice.status.toLowerCase()}`}>{invoice.status}</span></p>
-    <div className="invoice-figures">
-      <div><span>Total</span><strong>{money(invoice.total)}</strong></div>
-      <div><span>Abonado</span><strong>{money(invoice.paid)}</strong></div>
-      <div><span>Saldo</span><strong className={saldo > 0 ? 'balance-due' : 'balance-clear'}>{money(saldo)}</strong></div>
-    </div>
-    <div className="invoice-actions">
-      {saldo > 0 && invoice.status !== 'Cancelada' && <button className="admin-action" onClick={onPay}><Wallet />Registrar abono</button>}
-      <button className="admin-action ghost" disabled={working} onClick={() => act((lib) => lib.downloadInvoicePdf(invoice))}>{working ? <LoaderCircle className="spin" /> : <Download />}Descargar PDF</button>
-      <button className="admin-action ghost" disabled={working} onClick={() => act((lib) => lib.shareInvoice(invoice))}><Share2 />Compartir</button>
-    </div>
-    {payments.length > 0 && <div className="payment-history"><h3>Historial de abonos</h3>{payments.map((payment) => <div key={payment.id} className="payment-row"><div><strong>{money(payment.amount)}</strong><span>{payment.method} · {shortDate(payment.createdAt)}{payment.note && ` · ${payment.note}`}</span></div><div className="row-actions"><button disabled={working} onClick={() => act((lib) => lib.downloadReceiptPdf(invoice, payment))}><Download size={15} />Recibo</button><button disabled={working} title="Compartir recibo" onClick={() => act((lib) => lib.shareReceipt(invoice, payment))}><Share2 size={15} /></button></div></div>)}</div>}
+    {invoiceBox}
+    <div className="detail-footer"><button className="text-danger" onClick={onDelete}><Trash2 size={15} />Enviar cita a la papelera</button></div>
   </div></div>
 }
 
@@ -946,12 +1013,12 @@ function DaysLeftBadge({ daysLeft }: { daysLeft: number }) {
 
 function TrashPanel({ trash, onRestore, onPurge }: {
   trash: TrashData
-  onRestore: (kind: 'product' | 'customer' | 'order' | 'appointment', id: number) => Promise<void>
-  onPurge: (kind: 'product' | 'customer' | 'order' | 'appointment', id: number, label: string) => Promise<void>
+  onRestore: (kind: TrashKind, id: number) => Promise<void>
+  onPurge: (kind: TrashKind, id: number, label: string) => Promise<void>
 }) {
-  const isEmpty = !trash.products.length && !trash.customers.length && !trash.orders.length && !trash.appointments.length && !trash.images.length
+  const isEmpty = !trash.products.length && !trash.customers.length && !trash.orders.length && !trash.appointments.length && !trash.images.length && !trash.invoices.length
   return <div className="dashboard">
-    <div className="admin-notice"><AlertTriangle size={16} /><div>Lo que está aquí se borra solo 30 días después. Puedes restaurarlo antes, o borrarlo ya. Las facturas nunca llegan aquí: se anulan, pero se guardan siempre.</div></div>
+    <div className="admin-notice"><AlertTriangle size={16} /><div>Lo que está aquí se borra solo 30 días después. Puedes restaurarlo antes, o borrarlo ya. Al borrar una factura definitivamente se borran también sus recibos de abono.</div></div>
 
     {isEmpty && <div className="admin-card"><div className="empty-admin"><Trash2 /><p>La papelera está vacía.</p></div></div>}
 
@@ -993,6 +1060,15 @@ function TrashPanel({ trash, onRestore, onPurge }: {
           <button title="Eliminar definitivamente" onClick={() => onPurge('appointment', item.id, `la cita ${item.appointmentNumber}`)}><Trash /></button>
         </div></td>
       </tr>)}</tbody></table></div>
+    </section>}
+
+    {trash.invoices.length > 0 && <section className="admin-card">
+      <div className="card-title"><div><span>COBROS</span><h2>{trash.invoices.length} {trash.invoices.length === 1 ? 'factura' : 'facturas'} en papelera</h2></div></div>
+      <div className="record-list">{trash.invoices.map((invoice) => <article key={invoice.id} className="record-card">
+        <header className="record-head"><div><strong className="record-name">{invoice.customerName}</strong><small>{invoice.folio} · {invoice.concept}</small></div><strong className="record-amount">{money(invoice.total)}</strong></header>
+        <p className="record-meta"><DaysLeftBadge daysLeft={invoice.daysLeft} />{invoice.paid > 0 && <> · abonado {money(invoice.paid)}</>}</p>
+        <div className="card-actions"><button className="act" onClick={() => onRestore('invoice', invoice.id)}><RotateCcw />Restaurar</button><button className="act danger" onClick={() => onPurge('invoice', invoice.id, `la factura ${invoice.folio} y sus abonos`)}><Trash />Borrar ya</button></div>
+      </article>)}</div>
     </section>}
 
     {trash.customers.length > 0 && <section className="admin-card">

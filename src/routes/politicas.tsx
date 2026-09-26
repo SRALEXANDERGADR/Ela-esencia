@@ -40,7 +40,7 @@ function Policies() {
         <article>
           <span>05</span>
           <h2>Conservación y eliminación de datos</h2>
-          <p>Los datos de catálogo, clientes, pedidos y citas que eliminamos internamente pasan primero por una papelera temporal (30 días) antes de borrarse en definitiva; las facturas y demás comprobantes de pago no siguen esta regla: se conservan siempre y solo pueden anularse, nunca borrarse, para mantener un historial financiero verificable. Si necesitas una copia de una factura o de tu información, puedes solicitarla.</p>
+          <p>Los datos de catálogo, clientes, pedidos, citas y facturas que eliminamos internamente pasan primero por una papelera temporal de 30 días antes de borrarse en definitiva. Una factura también puede anularse sin borrarse, para conservar su historial de pagos. Si necesitas una copia de una factura o de tu información, puedes solicitarla.</p>
         </article>
         <article>
           <span>06</span>

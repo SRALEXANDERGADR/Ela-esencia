@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { ArrowRight, Calendar, Check, Clock, Instagram, Menu, MessageCircle, Minus, Music2, Plus, Scissors, Search, ShoppingBag, Sparkles, Trash2, X } from 'lucide-react'
 import { createAppointment, createOrder, type CartLine } from '@/lib/store'
 import { ShareButton } from './ShareButton'
+import { formatMoney } from '@/lib/money'
 import { LeafBloom, LeafBranch, LeafSpray } from './LeafBranch'
 
 /** Mueve suavemente las 4 matas decorativas de las esquinas con el
@@ -43,7 +44,7 @@ function useLeafParallax() {
 type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean }
 type Props = { data: { products: Product[]; content: Record<string, string> } }
 
-const money = (value: number) => new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP' }).format(value / 100)
+const money = formatMoney
 const CART_KEY = 'ela-cart'
 const PLACEHOLDER = '/placeholder.png'
 const handle = (value: string) => (value || '').trim().replace(/^@+/, '')
