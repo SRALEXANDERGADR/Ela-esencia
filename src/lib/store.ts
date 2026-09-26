@@ -1,8 +1,8 @@
 import { createServerFn } from '@tanstack/react-start'
 import { env } from 'cloudflare:workers'
-import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { appointments, content, customers, imageTrash, invoices, orders, payments, products, pushSubscriptions } from '../../db/schema'
+import { appointments, content, customers, expenses, imageTrash, invoices, orders, payments, products, purchases, pushSubscriptions } from '../../db/schema'
 import { createSession, clearSession, verifyPassword, verifySession } from './auth'
 import { sendAppointmentNotificationEmail, sendOrderNotificationEmail } from './email'
 import { deleteImageFile, pathFromDownloadUrl } from './github'
@@ -104,12 +104,17 @@ let schemaReady: Promise<void> | null = null
 function ensureSchema(): Promise<void> {
   if (!schemaReady) {
     schemaReady = (async () => {
+      // Sube el número si agregas otra tabla/columna aquí.
       const result = await db.execute(sql`select
-        (select count(*) from information_schema.tables where table_schema = current_schema() and table_name = 'push_subscriptions')
-        + (select count(*) from information_schema.columns where table_schema = current_schema() and table_name = 'invoices' and column_name = 'deleted_at') as n`)
+        (select count(*) from information_schema.tables where table_schema = current_schema() and table_name in ('push_subscriptions', 'purchases', 'expenses'))
+        + (select count(*) from information_schema.columns where table_schema = current_schema() and ((table_name = 'invoices' and column_name = 'deleted_at') or (table_name = 'products' and column_name in ('cost', 'original_price')))) as n`)
       const rows = ((result as unknown as { rows?: Array<{ n: number | string }> }).rows ?? (result as unknown as Array<{ n: number | string }>)) || []
-      if (Number(rows[0]?.n ?? 0) >= 2) return
+      if (Number(rows[0]?.n ?? 0) >= 6) return
       await db.execute(sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "deleted_at" timestamp`)
+      await db.execute(sql`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "cost" integer NOT NULL DEFAULT 0`)
+      await db.execute(sql`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "original_price" integer NOT NULL DEFAULT 0`)
+      await db.execute(sql`CREATE TABLE IF NOT EXISTS "purchases" ("id" serial PRIMARY KEY, "product_id" integer NOT NULL, "product_name" text NOT NULL, "fund" text NOT NULL DEFAULT 'capital', "quantity" integer NOT NULL, "unit_cost" integer NOT NULL, "total_cost" integer NOT NULL, "remaining_quantity" integer NOT NULL, "notes" text NOT NULL DEFAULT '', "created_at" timestamp NOT NULL DEFAULT now())`)
+      await db.execute(sql`CREATE TABLE IF NOT EXISTS "expenses" ("id" serial PRIMARY KEY, "type" text NOT NULL DEFAULT 'negocio', "description" text NOT NULL, "amount" integer NOT NULL, "created_at" timestamp NOT NULL DEFAULT now())`)
       await db.execute(sql`CREATE TABLE IF NOT EXISTS "push_subscriptions" ("id" serial PRIMARY KEY, "endpoint" text NOT NULL UNIQUE, "p256dh" text NOT NULL, "auth" text NOT NULL, "label" text NOT NULL DEFAULT '', "created_at" timestamp NOT NULL DEFAULT now())`)
     })().catch((error) => {
       schemaReady = null // se reintenta en la próxima petición
@@ -143,16 +148,128 @@ function checkStatus(status: string, paymentStatus: string, allowed: string[]) {
 
 // Claves del contenido que son configuración privada y no deben llegar
 // a la tienda pública (cualquiera podría leerlas en el navegador).
-const PRIVATE_CONTENT_KEYS = ['notificationEmail', 'vapidKeys', 'productsSeeded']
+const PRIVATE_CONTENT_KEYS = ['notificationEmail', 'vapidKeys', 'productsSeeded', 'capitalInicial', 'reinvestPercent']
 
-// Devuelve (o vuelve a sacar) las unidades de un pedido al inventario.
-// Solo aplica a artículos de tipo 'producto'.
-async function adjustStock(items: Array<{ id: number; quantity: number }>, direction: 1 | -1) {
-  for (const item of items) {
-    const qty = Math.max(0, Math.floor(Number(item.quantity) || 0))
-    if (!item.id || !qty) continue
-    await db.update(products).set({ stock: sql`greatest(${products.stock} + ${direction * qty}, 0)` }).where(and(eq(products.id, item.id), eq(products.kind, 'producto')))
+// ───────────────────────────────────────────────────────────────────────
+// INVENTARIO Y LOTES (FIFO) — igual que en JB Tech Store (sin opciones).
+// Cada compra ("Reponer") es un lote con su costo. Al vender, sale primero
+// del lote más viejo que todavía tenga unidades.
+// ───────────────────────────────────────────────────────────────────────
+type OrderItem = { id: number; name: string; price: number; quantity: number; cost?: number; reinvCost?: number; reinvQty?: number }
+const FUNDS = ['capital', 'reinversion'] as const
+type Fund = (typeof FUNDS)[number]
+/** Lo que costaron unas unidades vendidas, y cuánto de eso (y cuántas
+ * unidades) salió de lotes pagados con el dinero para reinvertir. */
+type TakenCost = { cost: number; reinv: number; reinvQty: number }
+
+/** Línea de pedido con su costo por unidad y su parte de reinversión. */
+function withCost(item: OrderItem, taken: TakenCost): OrderItem {
+  const { reinvCost: _a, reinvQty: _b, ...rest } = item
+  const line: OrderItem = { ...rest, cost: Math.round(taken.cost / Math.max(1, item.quantity)) }
+  return taken.reinvQty > 0 ? { ...line, reinvCost: taken.reinv, reinvQty: taken.reinvQty } : line
+}
+
+async function loadProduct(productId: number) {
+  const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1)
+  return product
+}
+
+/** El "costo actual" del producto es el del próximo lote que se va a
+ * vender. Si ya no quedan lotes con unidades, se deja como está. */
+async function syncCurrentCost(productId: number) {
+  const [nextBatch] = await db.select({ unitCost: purchases.unitCost }).from(purchases)
+    .where(and(eq(purchases.productId, productId), gt(purchases.remainingQuantity, 0)))
+    .orderBy(purchases.createdAt, purchases.id).limit(1)
+  if (nextBatch) await db.update(products).set({ cost: nextBatch.unitCost }).where(eq(products.id, productId))
+}
+
+// Consume del lote más viejo primero. Si no hay suficientes unidades en
+// lotes (ej. existencias de antes de registrar compras), lo que falte usa
+// el costo actual del producto, como dinero del negocio.
+async function consumeFifoCost(product: typeof products.$inferSelect, quantity: number): Promise<TakenCost> {
+  let remaining = quantity
+  const taken: TakenCost = { cost: 0, reinv: 0, reinvQty: 0 }
+  const batches = await db.select().from(purchases)
+    .where(and(eq(purchases.productId, product.id), gt(purchases.remainingQuantity, 0)))
+    .orderBy(purchases.createdAt, purchases.id)
+  for (const batch of batches) {
+    if (remaining <= 0) break
+    const take = Math.min(remaining, batch.remainingQuantity)
+    taken.cost += take * batch.unitCost
+    if (batch.fund === 'reinversion') { taken.reinv += take * batch.unitCost; taken.reinvQty += take }
+    remaining -= take
+    await db.update(purchases).set({ remainingQuantity: batch.remainingQuantity - take }).where(eq(purchases.id, batch.id))
   }
+  if (remaining > 0) taken.cost += remaining * product.cost
+  await syncCurrentCost(product.id)
+  return taken
+}
+
+/** Devuelve unidades a los lotes de los que salieron (el reverso de
+ * consumeFifoCost): primero al lote más nuevo que ya se había empezado a
+ * vender. Las `reinvQty` vuelven a lotes del dinero para reinvertir. */
+async function returnToFifo(productId: number, quantity: number, reinvQty = 0) {
+  const batches = await db.select().from(purchases)
+    .where(and(eq(purchases.productId, productId), lt(purchases.remainingQuantity, purchases.quantity)))
+    .orderBy(desc(purchases.createdAt), desc(purchases.id))
+  const put = new Map<number, number>()
+  const fill = (list: typeof batches, amount: number) => {
+    let remaining = amount
+    for (const batch of list) {
+      if (remaining <= 0) break
+      const room = batch.quantity - batch.remainingQuantity - (put.get(batch.id) ?? 0)
+      if (room <= 0) continue
+      const add = Math.min(room, remaining)
+      put.set(batch.id, (put.get(batch.id) ?? 0) + add)
+      remaining -= add
+    }
+    return remaining
+  }
+  const reinv = Math.min(quantity, Math.max(0, reinvQty))
+  const left = fill(batches.filter((batch) => batch.fund === 'reinversion'), reinv) + fill(batches.filter((batch) => batch.fund !== 'reinversion'), quantity - reinv)
+  fill(batches, left)
+  for (const batch of batches) {
+    const add = put.get(batch.id)
+    if (add) await db.update(purchases).set({ remainingQuantity: batch.remainingQuantity + add }).where(eq(purchases.id, batch.id))
+  }
+}
+
+/** Saca unidades del inventario (FIFO) y devuelve lo que costaron. */
+async function takeStock(productId: number, quantity: number, label: string): Promise<TakenCost> {
+  if (quantity <= 0) return { cost: 0, reinv: 0, reinvQty: 0 }
+  const product = await loadProduct(productId)
+  if (!product || product.kind !== 'producto') throw new Error(`El producto ${label} ya no existe.`)
+  if (product.stock < quantity) throw new Error(`No hay suficientes unidades de ${product.name} (quedan ${product.stock}).`)
+  const taken = await consumeFifoCost(product, quantity)
+  await db.update(products).set({ stock: sql`greatest(0, ${products.stock} - ${quantity})` }).where(eq(products.id, productId))
+  return taken
+}
+
+/** Devuelve unidades al inventario y a sus lotes. */
+async function returnStock(productId: number, quantity: number, reinvQty = 0) {
+  if (quantity <= 0) return
+  const product = await loadProduct(productId)
+  if (!product || product.kind !== 'producto') return // se borró definitivamente: no hay a dónde devolver
+  await returnToFifo(productId, quantity, reinvQty)
+  await db.update(products).set({ stock: sql`${products.stock} + ${quantity}` }).where(eq(products.id, productId))
+  await syncCurrentCost(productId)
+}
+
+/** Saca del inventario todas las líneas; si una falla, devuelve las que ya
+ * había sacado (el driver de Neon no tiene transacciones). */
+async function takeLines(lines: OrderItem[]): Promise<OrderItem[]> {
+  const done: OrderItem[] = []
+  try {
+    for (const line of lines) done.push(withCost(line, await takeStock(line.id, line.quantity, line.name)))
+    return done
+  } catch (error) {
+    for (const line of done) await returnStock(line.id, line.quantity, line.reinvQty ?? 0)
+    throw error
+  }
+}
+
+async function returnLines(lines: OrderItem[]) {
+  for (const line of lines) await returnStock(line.id, line.quantity, line.reinvQty ?? 0)
 }
 
 // Mantiene el "Pago" del pedido/cita igual que su factura: si la factura
@@ -307,13 +424,16 @@ export const checkSession = createServerFn({ method: 'GET' }).handler(async () =
 // TIENDA PÚBLICA
 // ───────────────────────────────────────────────────────────────────────
 export const getStorefront = createServerFn({ method: 'GET' }).handler(async () => {
+  await ensureSchema() // las columnas nuevas de products tienen que existir antes de leerlas
   await ensureSeeded()
   const [productRows, contentRows] = await Promise.all([
     db.select().from(products).where(and(eq(products.active, true), isNull(products.deletedAt))).orderBy(desc(products.featured), products.id),
     db.select().from(content),
   ])
   const publicContent = contentRows.filter((item) => !PRIVATE_CONTENT_KEYS.includes(item.key))
-  return { products: productRows, content: Object.fromEntries(publicContent.map((item) => [item.key, item.value])) }
+  // La tienda pública nunca recibe el costo (lo que pagó la dueña).
+  const publicProducts = productRows.map(({ cost: _cost, ...product }) => product)
+  return { products: publicProducts, content: Object.fromEntries(publicContent.map((item) => [item.key, item.value])) }
 })
 
 export const createOrder = createServerFn({ method: 'POST' })
@@ -346,8 +466,15 @@ export const createOrder = createServerFn({ method: 'POST' })
 
     // El driver HTTP de Neon no soporta transacciones interactivas, así que
     // estas operaciones se hacen en secuencia en vez de dentro de una tx.
-    const [order] = await db.insert(orders).values({ orderNumber, customerId: customer.id, customerName: data.name, email: data.email, phone: data.phone, address: data.address, items: calculated, total, createdAt }).returning()
-    for (const item of calculated) await db.update(products).set({ stock: sql`${products.stock} - ${item.quantity}` }).where(and(eq(products.id, item.id), sql`${products.stock} >= ${item.quantity}`))
+    // Sale del inventario por lotes (FIFO) y cada línea guarda lo que costó.
+    const items = await takeLines(calculated)
+    let order: typeof orders.$inferSelect
+    try {
+      [order] = await db.insert(orders).values({ orderNumber, customerId: customer.id, customerName: data.name, email: data.email, phone: data.phone, address: data.address, items, total, createdAt }).returning()
+    } catch (error) {
+      await returnLines(items)
+      throw error
+    }
     await db.insert(invoices).values({
       folio: makeFolio('FAC'),
       sourceType: 'pedido',
@@ -431,7 +558,7 @@ export const getAdminData = createServerFn({ method: 'GET' }).handler(async () =
   await ensureSchema()
   await ensureSeeded()
   await cleanupExpired()
-  const [productRows, orderRows, appointmentRows, customerRows, invoiceRows, paymentRows, contentRows, trashedProducts, trashedOrders, trashedAppointments, trashedCustomers, trashedImages, trashedInvoices] = await Promise.all([
+  const [productRows, orderRows, appointmentRows, customerRows, invoiceRows, paymentRows, contentRows, trashedProducts, trashedOrders, trashedAppointments, trashedCustomers, trashedImages, trashedInvoices, purchaseRows, expenseRows] = await Promise.all([
     db.select().from(products).where(isNull(products.deletedAt)).orderBy(desc(products.createdAt)),
     db.select().from(orders).where(isNull(orders.deletedAt)).orderBy(desc(orders.createdAt)),
     db.select().from(appointments).where(isNull(appointments.deletedAt)).orderBy(desc(appointments.date), desc(appointments.time)),
@@ -445,6 +572,8 @@ export const getAdminData = createServerFn({ method: 'GET' }).handler(async () =
     db.select().from(customers).where(isNotNull(customers.deletedAt)).orderBy(desc(customers.deletedAt)),
     db.select().from(imageTrash).orderBy(desc(imageTrash.deletedAt)),
     db.select().from(invoices).where(isNotNull(invoices.deletedAt)).orderBy(desc(invoices.deletedAt)),
+    db.select().from(purchases).orderBy(desc(purchases.createdAt), desc(purchases.id)),
+    db.select().from(expenses).orderBy(desc(expenses.createdAt), desc(expenses.id)),
   ])
 
   // A cada elemento en papelera se le agrega `daysLeft`: cuántos días
@@ -463,6 +592,8 @@ export const getAdminData = createServerFn({ method: 'GET' }).handler(async () =
     customers: customerRows,
     invoices: invoiceRows,
     payments: paymentRows,
+    purchases: purchaseRows,
+    expenses: expenseRows,
     content: Object.fromEntries(contentRows.filter((item) => item.key !== 'vapidKeys' && item.key !== 'productsSeeded').map((item) => [item.key, item.value])),
     trash: {
       products: withDaysLeft(trashedProducts),
@@ -479,13 +610,15 @@ export const getAdminData = createServerFn({ method: 'GET' }).handler(async () =
 // ADMIN — productos y servicios
 // ───────────────────────────────────────────────────────────────────────
 export const saveProduct = createServerFn({ method: 'POST' })
-  .inputValidator((data: { id?: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }) => data)
+  .inputValidator((data: { id?: number; kind: string; name: string; category: string; description: string; price: number; originalPrice?: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }) => data)
   .handler(async ({ data }) => {
     await requireAdmin()
     if (!clean(data.name)) throw new Error('Escribe el nombre del artículo.')
     if (!['producto', 'servicio'].includes(data.kind)) throw new Error('Tipo de artículo inválido.')
     if (!(Number(data.price) >= 0) || !(Number(data.stock) >= 0)) throw new Error('El precio y las existencias no pueden ser negativos.')
-    const values = { kind: data.kind, name: clean(data.name, 160), category: clean(data.category, 80) || 'General', description: clean(data.description, 2000), price: Math.round(Number(data.price)), stock: Math.floor(Number(data.stock)), durationMinutes: Math.max(0, Math.floor(Number(data.durationMinutes) || 0)), image: clean(data.image, 1000), featured: data.featured, active: data.active }
+    // Un producto nuevo empieza en 0: las unidades se suman con «Reponer»,
+    // así queda registrado lo que costaron (igual que en JB Tech Store).
+    const values = { kind: data.kind, name: clean(data.name, 160), category: clean(data.category, 80) || 'General', description: clean(data.description, 2000), price: Math.round(Number(data.price)), originalPrice: Math.max(0, Math.round(Number(data.originalPrice) || 0)), stock: data.id ? Math.floor(Number(data.stock)) : 0, durationMinutes: Math.max(0, Math.floor(Number(data.durationMinutes) || 0)), image: clean(data.image, 1000), featured: data.featured, active: data.active }
     if (data.id) {
       const [current] = await db.select().from(products).where(eq(products.id, data.id)).limit(1)
       if (current && current.image && current.image !== data.image) {
@@ -539,18 +672,17 @@ export const updateOrderStatus = createServerFn({ method: 'POST' })
     const cancelling = data.status === 'Cancelado' && current.status !== 'Cancelado'
     const reopening = data.status !== 'Cancelado' && current.status === 'Cancelado'
     if (cancelling) await checkInvoiceForCancel('pedido', data.id, Boolean(data.force))
+    let items = current.items as OrderItem[]
+    // Cancelar devuelve las unidades a sus lotes. Reactivar las vuelve a
+    // sacar (si todavía hay), y el costo se recalcula: pueden salir ahora
+    // de otros lotes que cuando se hizo el pedido.
+    if (cancelling) await returnLines(items)
     if (reopening) {
-      // Antes de reactivarlo, revisa que todavía haya unidades.
-      const ids = current.items.map((item) => item.id)
-      const rows = ids.length ? await db.select().from(products).where(inArray(products.id, ids)) : []
-      for (const item of current.items) {
-        const row = rows.find((product) => product.id === item.id)
-        if (row && row.kind === 'producto' && row.stock < item.quantity) throw new Error(`No hay suficientes unidades de ${row.name} para reactivar este pedido (quedan ${row.stock}).`)
-      }
+      try { items = await takeLines(items) }
+      catch (caught) { throw new Error(`${caught instanceof Error ? caught.message : 'No hay suficientes unidades.'} No se puede reactivar este pedido; si tienes más, regístralas con «Reponer».`) }
     }
-    await db.update(orders).set({ status: data.status, paymentStatus: data.paymentStatus }).where(eq(orders.id, data.id))
-    if (cancelling) await adjustStock(current.items, 1)
-    if (reopening) { await adjustStock(current.items, -1); await reopenInvoiceFor('pedido', data.id) }
+    await db.update(orders).set({ status: data.status, paymentStatus: data.paymentStatus, items }).where(eq(orders.id, data.id))
+    if (reopening) await reopenInvoiceFor('pedido', data.id)
     if (data.paymentStatus === 'Pagado' && current.paymentStatus !== 'Pagado') await settleInvoiceFor('pedido', data.id)
     return true
   })
@@ -570,7 +702,7 @@ export const deleteOrder = createServerFn({ method: 'POST' })
     // Al mandarlo a la papelera, sus unidades vuelven al inventario
     // (si ya estaba cancelado, ya habían vuelto).
     await db.update(orders).set({ deletedAt: new Date() }).where(eq(orders.id, data.id))
-    if (current.status !== 'Cancelado') await adjustStock(current.items, 1)
+    if (current.status !== 'Cancelado') await returnLines(current.items as OrderItem[])
     return true
   })
 
@@ -853,4 +985,101 @@ export const sendTestPush = createServerFn({ method: 'POST' }).inputValidator((e
   const result = await sendToSubscriptions(rows, { title: '🔔 Notificaciones activadas', body: 'Así te va a llegar cada cita y cada pedido nuevo de la tienda.', url: '/admin', tag: 'prueba' })
   if (!result.sent) throw new Error(`No se pudo entregar la prueba: ${result.problem}. Toca «Activar notificaciones» otra vez.`)
   return result
+})
+
+// ───────────────────────────────────────────────────────────────────────
+// ADMIN — compras (Reponer), ventas por fuera y gastos (igual que en JB)
+// ───────────────────────────────────────────────────────────────────────
+
+// Registra una compra: suma las unidades y crea un lote con su costo. Las
+// ventas sacan primero del lote más viejo. `fund` = con qué dinero se pagó.
+export const recordPurchase = createServerFn({ method: 'POST' })
+  .inputValidator((data: { productId: number; quantity: number; unitCost: number; fund?: string; notes?: string }) => data)
+  .handler(async ({ data }) => {
+    await requireAdmin()
+    const fund: Fund = FUNDS.includes(data.fund as Fund) ? (data.fund as Fund) : 'capital'
+    const product = await loadProduct(Number(data.productId))
+    if (!product || product.kind !== 'producto') throw new Error('Elige un producto (los servicios no llevan existencias).')
+    const quantity = Math.round(Number(data.quantity))
+    const unitCost = Math.round(Number(data.unitCost))
+    if (!Number.isFinite(quantity) || quantity < 1) throw new Error('Pon cuántas unidades compraste (al menos 1).')
+    if (!Number.isFinite(unitCost) || unitCost < 0) throw new Error('El costo no es válido.')
+    // El lote nuevo solo pasa a ser "el costo actual" si ya no quedaba
+    // existencia vieja (es el próximo que se va a vender).
+    await db.update(products).set({ stock: product.stock + quantity, cost: product.stock <= 0 ? unitCost : product.cost }).where(eq(products.id, product.id))
+    await db.insert(purchases).values({ productId: product.id, productName: product.name, fund, quantity, unitCost, totalCost: quantity * unitCost, remainingQuantity: quantity, notes: clean(data.notes, 300) })
+    return { total: quantity * unitCost, fund }
+  })
+
+// Borra una compra registrada por error. Solo quita lo que TODAVÍA no se ha
+// vendido de ese lote; lo vendido se queda (esas ventas guardaron su costo).
+export const deletePurchase = createServerFn({ method: 'POST' }).inputValidator((id: number) => id).handler(async ({ data }) => {
+  await requireAdmin()
+  const [purchase] = await db.select().from(purchases).where(eq(purchases.id, data)).limit(1)
+  if (!purchase) throw new Error('Esa compra ya no existe.')
+  if (purchase.remainingQuantity <= 0) throw new Error('Ese lote ya se vendió completo: no queda nada que quitar.')
+  const sold = purchase.quantity - purchase.remainingQuantity
+  if (sold > 0) {
+    await db.update(purchases).set({ quantity: sold, remainingQuantity: 0, totalCost: sold * purchase.unitCost, notes: `${purchase.notes ? `${purchase.notes} · ` : ''}ajustada: se quitaron ${purchase.remainingQuantity} sin vender` }).where(eq(purchases.id, data))
+  } else {
+    await db.delete(purchases).where(eq(purchases.id, data))
+  }
+  await db.update(products).set({ stock: sql`greatest(0, ${products.stock} - ${purchase.remainingQuantity})` }).where(eq(products.id, purchase.productId))
+  await syncCurrentCost(purchase.productId)
+  return true
+})
+
+// Venta hecha por fuera de la web (en persona o por WhatsApp): sale del
+// inventario por lotes, crea el pedido (ya entregado) con su factura y, si
+// ya pagaron, el abono. Cuenta en Finanzas igual que un pedido de la tienda.
+export const recordManualSale = createServerFn({ method: 'POST' })
+  .inputValidator((data: { customerName?: string; phone?: string; notes?: string; paid: boolean; items: Array<{ productId: number; quantity: number; price: number }> }) => data)
+  .handler(async ({ data }) => {
+    await requireAdmin()
+    if (!Array.isArray(data.items) || !data.items.length) throw new Error('Agrega al menos un producto.')
+    const lines: OrderItem[] = []
+    for (const raw of data.items) {
+      const productId = Number(raw.productId)
+      const quantity = Math.round(Number(raw.quantity))
+      const price = Math.round(Number(raw.price))
+      if (!Number.isInteger(productId) || productId < 1) throw new Error('Elige el producto de cada línea.')
+      if (!Number.isFinite(quantity) || quantity < 1) throw new Error('La cantidad debe ser 1 o más.')
+      if (!Number.isFinite(price) || price < 0) throw new Error('El precio no es válido.')
+      const product = await loadProduct(productId)
+      if (!product || product.kind !== 'producto') throw new Error('Uno de los productos ya no existe.')
+      const already = lines.filter((line) => line.id === productId).reduce((sum, line) => sum + line.quantity, 0)
+      if (product.stock < already + quantity) throw new Error(`No hay suficientes unidades de ${product.name} (quedan ${product.stock}). Si tienes más, regístralas primero con «Reponer».`)
+      lines.push({ id: product.id, name: product.name, price, quantity })
+    }
+    const items = await takeLines(lines)
+    const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+    const customerName = clean(data.customerName, 120) || 'Venta en persona'
+    const phone = clean(data.phone, 40)
+    const customer = phone ? await findOrCreateCustomer({ name: customerName, phone }) : null
+    const orderNumber = makeFolio('VTA')
+    const paid = Boolean(data.paid)
+    const [order] = await db.insert(orders).values({ orderNumber, customerId: customer?.id ?? null, customerName, email: '', phone, address: '', items, total, status: 'Entregado', paymentStatus: paid ? 'Pagado' : 'Pendiente' }).returning()
+    const units = items.reduce((sum, item) => sum + item.quantity, 0)
+    const [invoice] = await db.insert(invoices).values({ folio: makeFolio('FAC'), sourceType: 'pedido', sourceId: order.id, customerId: customer?.id ?? null, customerName, phone, concept: `Venta por fuera ${orderNumber} — ${units} artículo(s)${clean(data.notes, 120) ? ` · ${clean(data.notes, 120)}` : ''}`, total, paid: paid ? total : 0, status: paid ? 'Pagada' : 'Pendiente' }).returning()
+    if (paid && total > 0) await db.insert(payments).values({ folio: makeFolio('REC'), invoiceId: invoice.id, amount: total, method: 'Efectivo', note: 'Venta por fuera' })
+    return { orderNumber, total }
+  })
+
+// Gasto del negocio (sale del dinero del negocio) o personal (de lo tuyo).
+export const recordExpense = createServerFn({ method: 'POST' })
+  .inputValidator((data: { type: string; description: string; amount: number }) => data)
+  .handler(async ({ data }) => {
+    await requireAdmin()
+    const description = clean(data.description, 200)
+    const amount = Math.round(Number(data.amount))
+    if (!description) throw new Error('Escribe qué fue el gasto.')
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('El monto debe ser mayor a 0.')
+    await db.insert(expenses).values({ type: data.type === 'personal' ? 'personal' : 'negocio', description, amount })
+    return true
+  })
+
+export const deleteExpense = createServerFn({ method: 'POST' }).inputValidator((id: number) => id).handler(async ({ data }) => {
+  await requireAdmin()
+  await db.delete(expenses).where(eq(expenses.id, data))
+  return true
 })

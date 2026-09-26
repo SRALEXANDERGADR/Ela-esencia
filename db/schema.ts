@@ -14,6 +14,11 @@ export const products = pgTable('products', {
   category: text('category').notNull().default('General'),
   description: text('description').notNull().default(''),
   price: integer('price').notNull().default(0), // centavos
+  // Precio de antes (tachado en la tienda). 0 = sin rebaja.
+  originalPrice: integer('original_price').notNull().default(0),
+  // Costo por unidad del próximo lote que se va a vender (FIFO). Lo pone
+  // solo el sistema con las compras ("Reponer"); ver `purchases`.
+  cost: integer('cost').notNull().default(0),
   stock: integer('stock').notNull().default(0), // solo aplica a productos
   durationMinutes: integer('duration_minutes').notNull().default(30), // solo aplica a servicios
   image: text('image').notNull().default(''),
@@ -51,7 +56,10 @@ export const orders = pgTable('orders', {
   email: text('email').notNull().default(''),
   phone: text('phone').notNull().default(''),
   address: text('address').notNull().default(''),
-  items: jsonb('items').notNull().$type<Array<{ id: number; name: string; price: number; quantity: number }>>(),
+  // `cost` = lo que costó cada unidad (sale del lote de compra del que se
+  // vendió). `reinvCost`/`reinvQty`: cuánto costaron EN TOTAL y cuántas
+  // unidades salieron de lotes pagados con el dinero para reinvertir.
+  items: jsonb('items').notNull().$type<Array<{ id: number; name: string; price: number; quantity: number; cost?: number; reinvCost?: number; reinvQty?: number }>>(),
   total: integer('total').notNull(),
   status: text('status').notNull().default('Pendiente'), // Pendiente, Preparando, Enviado, Entregado, Cancelado
   paymentStatus: text('payment_status').notNull().default('Pendiente'), // Pendiente, Pagado, Reembolsado
@@ -155,5 +163,34 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
   p256dh: text('p256dh').notNull(),
   auth: text('auth').notNull(),
   label: text('label').notNull().default(''), // ej. "Android · Chrome"
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+})
+
+// ───────────────────────────────────────────────────────────────────────
+// COMPRAS POR LOTES (FIFO) — igual que en JB Tech Store. Cada "Reponer" es
+// un lote con su propio costo. Al vender, sale primero del lote más viejo
+// que todavía tenga unidades. La tabla la crea `ensureSchema()`.
+// ───────────────────────────────────────────────────────────────────────
+export const purchases = pgTable('purchases', {
+  id: serial('id').primaryKey(),
+  productId: integer('product_id').notNull(),
+  productName: text('product_name').notNull(), // copia del nombre, por si el producto se borra
+  // Con qué dinero se pagó: 'capital' (del negocio) o 'reinversion' (el
+  // dinero para reinvertir, que es de la dueña).
+  fund: text('fund').notNull().default('capital'),
+  quantity: integer('quantity').notNull(),
+  unitCost: integer('unit_cost').notNull(), // centavos
+  totalCost: integer('total_cost').notNull(), // centavos = quantity * unitCost
+  remainingQuantity: integer('remaining_quantity').notNull(), // lo que queda sin vender de este lote
+  notes: text('notes').notNull().default(''),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+})
+
+// GASTOS — 'negocio' sale del dinero del negocio; 'personal' de lo de la dueña.
+export const expenses = pgTable('expenses', {
+  id: serial('id').primaryKey(),
+  type: text('type').notNull().default('negocio'), // 'negocio' | 'personal'
+  description: text('description').notNull(),
+  amount: integer('amount').notNull(), // centavos
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })

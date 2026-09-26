@@ -744,3 +744,100 @@ img{max-width:100%}
 .card-actions{grid-template-columns:repeat(3,1fr)}
 .card-actions.four{grid-template-columns:repeat(4,1fr)}
 .record-meta.nowrap{flex-wrap:nowrap}
+
+/* ═══ Catálogo e inventario (como JB Tech Store) ═══ */
+.catalog-tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.act-inline{display:flex;align-items:center;gap:8px;border:1px solid var(--gold-dark);background:var(--white);color:var(--gold-dark);padding:10px 14px;font-weight:600;font-size:13px;cursor:pointer}
+.act-inline:disabled{opacity:.45;cursor:not-allowed}
+.filter-chips button.warn{border-color:#f1c9c4;color:#b91c1c}
+.filter-chips button.warn.active{background:#b91c1c;border-color:#b91c1c;color:white}
+.record-thumb{width:64px;height:64px;object-fit:cover;flex:none;background:var(--paper)}
+.record-price{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.record-price s{font-size:12px;color:var(--muted)}
+.pill-row{display:flex;flex-wrap:wrap;gap:6px}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;background:var(--paper);font-size:12px;font-weight:600;color:var(--ink)}
+.pill.ok{background:#dcfce7;color:#15803d}
+.pill.warn{background:#fef3c7;color:#9a4a0b}
+.pill.bad{background:#fde2e2;color:#b91c1c}
+.card-actions.five{grid-template-columns:repeat(5,1fr)}
+.card-actions .act.primary svg{color:white}
+.quick-actions.three{grid-template-columns:repeat(3,1fr)}
+.money-hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px}
+.money-card{background:var(--white);border:1px solid var(--line);padding:20px;display:grid;gap:6px}
+.money-card span{font:500 10px var(--font-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--gold-dark)}
+.money-card strong{font:700 30px/1.1 var(--font-display);color:var(--ink)}
+.money-card small{color:var(--muted);font-size:12px;line-height:1.4}
+.money-card.accent{background:var(--ink);border-color:var(--ink)}
+.money-card.accent span{color:var(--gold)}
+.money-card.accent strong{color:white}
+.money-card.accent small{color:#d8c9b2}
+.finance-details summary{display:flex;justify-content:space-between;align-items:center;cursor:pointer;list-style:none}
+.finance-details summary::-webkit-details-marker{display:none}
+.finance-details summary h3{font:600 19px var(--font-display);margin:0}
+.finance-details summary>svg{color:var(--gold-dark);transition:transform .25s;flex:none}
+.finance-details[open] summary>svg{transform:rotate(90deg)}
+.finance-details h4{font:500 10px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--gold-dark);margin:22px 0 10px}
+.finance-details .form-grid{margin-top:16px}
+.finance-details .admin-action{margin-top:8px}
+.finance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.finance-grid div{background:var(--paper);padding:12px}
+.finance-grid span{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.finance-grid strong{font:700 18px var(--font-display)}
+.field{font:600 11px var(--font-mono);text-transform:uppercase;letter-spacing:.08em;display:grid;gap:8px}
+.field input{font:400 15px var(--font-body);letter-spacing:0;text-transform:none;border:0;border-bottom:1px solid var(--line);background:rgba(255,255,255,.5);padding:12px}
+.fund-choice{display:grid;gap:8px;margin:18px 0 4px}
+.fund-choice>span{font:600 11px var(--font-mono);text-transform:uppercase;letter-spacing:.08em}
+.fund-option{display:flex!important;align-items:center;gap:12px;border:1px solid var(--line);background:var(--white);padding:12px 14px;cursor:pointer;text-transform:none!important;letter-spacing:0!important;font:400 14px var(--font-body)!important}
+.fund-option.active{border-color:var(--gold-dark);box-shadow:inset 0 0 0 1px var(--gold-dark)}
+.fund-option input{width:auto!important;margin:0!important;accent-color:var(--gold-dark)}
+.fund-option strong{display:block;font-size:14px}
+.fund-option small{color:var(--muted);font-size:12px}
+.fund-option em{font-style:normal;font-weight:600}
+.sale-line{border:1px solid var(--line);background:var(--white);padding:12px;margin-bottom:10px}
+.sale-line-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.sale-total{margin:14px 0;font-size:14px;color:var(--muted)}
+.sale-total strong{color:var(--ink);font:700 18px var(--font-display)}
+.sale-total.small{margin:8px 0 0;font-size:13px}
+.sale-total.small strong{font-size:15px}
+.add-line{margin:4px 0 16px}
+.lot-numbers{margin:0;font-size:14px}
+.lot-bar{height:6px;background:var(--paper);overflow:hidden}
+.lot-bar span{display:block;height:100%;background:var(--gold)}
+.lot-badge{padding:4px 10px;font:600 10px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.lot-badge-ahora{background:#dcfce7;color:#15803d}
+.lot-badge-espera{background:#fef3c7;color:#9a4a0b}
+.lot-badge-vendido{background:#e2e8f0;color:#475569}
+.lot-card.lot-vendido{opacity:.7}
+.lot-fund{color:var(--gold-dark);font-weight:600}
+.next-lot{background:var(--paper);padding:12px 14px;font-size:14px;margin:14px 0}
+.lots-restock{margin-top:16px}
+.expense-foot{display:flex;justify-content:space-between;align-items:center;gap:10px}
+@media(max-width:760px){
+  .quick-actions.three{grid-template-columns:1fr 1fr 1fr}
+  .quick-actions.three button{flex-direction:column;gap:6px;padding:12px 6px;font-size:11px;text-align:center}
+  .money-hero{grid-template-columns:1fr 1fr;gap:8px}
+  .money-card{padding:14px}
+  .money-card strong{font-size:22px}
+  .money-card.accent{grid-column:1/-1}
+  .card-actions.five .act{font-size:10px;min-height:52px;padding:4px 2px}
+  .card-actions.five .act svg{width:17px;height:17px}
+  .record-thumb{width:56px;height:56px}
+}
+@media(max-width:360px){.card-actions.five{grid-template-columns:repeat(3,1fr)}}
+
+/* ═══ Crédito oficial GADR Net (igual que JB Tech Store y GADR) ═══
+   Letra recta y gruesa, "Net" en verde salvia y el punto color cobre. */
+.gadr-credit{opacity:.85;transition:opacity .25s ease}
+@media(hover:hover) and (pointer:fine){.gadr-credit:hover{opacity:1}}
+.gadr-credit-text{font-size:11px;color:#b3a58b}
+.gadr-mark-icon{font:700 16px/1 'Segoe UI',monospace;letter-spacing:-1px;color:#D8CDB0}
+.gadr-mark-icon i{background:#B2603C}
+.gadr-mark-word{font-family:'Inter','Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;font-weight:900;font-size:13px;line-height:1;letter-spacing:.04em;color:#fffcf6;margin-top:3px}
+.gadr-mark-word small{font-family:inherit;font-weight:700;font-size:7px;letter-spacing:.22em;color:#9FAD90;margin-top:1px}
+
+/* ═══ Tienda: precios más grandes y precio de antes tachado ═══ */
+.product-action strong{font-size:24px}
+.service-info .product-action strong{font:600 20px var(--font-display)}
+.price-was{display:block;font:400 13px var(--font-body);color:var(--muted);text-decoration:line-through}
+@media(max-width:620px){.service-info .product-action strong{font-size:19px}.product-action strong{font-size:22px}}
+.product-modal .invoice-summary{margin:0 0 18px;line-height:1.5}

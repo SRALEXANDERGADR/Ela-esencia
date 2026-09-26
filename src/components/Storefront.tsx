@@ -41,7 +41,7 @@ function useLeafParallax() {
   return refs
 }
 
-type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean }
+type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; stock: number; durationMinutes: number; image: string; featured: boolean }
 type Props = { data: { products: Product[]; content: Record<string, string> } }
 
 const money = formatMoney
@@ -293,7 +293,7 @@ export function Storefront({ data }: Props) {
               <h3>{service.name}</h3>
               <p>{service.description}</p>
               <div className="service-meta"><span><Clock size={14} />{service.durationMinutes} min</span></div>
-              <div className="product-action"><strong>{money(service.price)}</strong><button onClick={() => { setBookingService(service); setBookingConfirmation(null); setBookingError('') }}>Agendar cita<Calendar size={16} /></button></div>
+              <div className="product-action"><strong>{service.originalPrice > service.price && <span className="price-was">{money(service.originalPrice)}</span>}{money(service.price)}</strong><button onClick={() => { setBookingService(service); setBookingConfirmation(null); setBookingError('') }}>Agendar cita<Calendar size={16} /></button></div>
             </div>
           </article>)}
           {!services.length && <div className="empty-state"><Scissors /><h3>Muy pronto nuevos servicios</h3><p>Vuelve pronto para agendar tu cita.</p></div>}
@@ -309,7 +309,7 @@ export function Storefront({ data }: Props) {
             <div className="product-number">{String(index + 1).padStart(2, '0')}</div>
             <div className="product-image"><img src={product.image || PLACEHOLDER} alt={product.name} loading="lazy" decoding="async" onError={onImgError} />{product.stock === 0 && <span>Agotado</span>}</div>
             <div className="product-info"><p className="product-category">{product.category}</p><h3>{product.name}</h3><p>{product.description}</p><div className="stock-line"><span className={product.stock ? '' : 'empty'}>{product.stock ? (product.stock <= 5 ? `¡Quedan ${product.stock}!` : 'Disponible') : 'Sin existencias'}</span></div></div>
-            <div className="product-action"><strong>{money(product.price)}</strong><button disabled={product.stock === 0} onClick={() => addToCart(product)}>{product.stock ? 'Agregar' : 'Agotado'}<Plus /></button></div>
+            <div className="product-action"><strong>{product.originalPrice > product.price && <span className="price-was">{money(product.originalPrice)}</span>}{money(product.price)}</strong><button disabled={product.stock === 0} onClick={() => addToCart(product)}>{product.stock ? 'Agregar' : 'Agotado'}<Plus /></button></div>
           </article>)}{visibleProducts.length === 0 && <div className="empty-state"><Search /><h3>No encontramos ese producto</h3><p>Prueba otra palabra o categoría.</p></div>}</div>
         </div>
       </section>

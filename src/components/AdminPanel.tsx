@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { AlertTriangle, ArrowLeft, Ban, Bell, BellOff, BellRing, Boxes, Calendar, CalendarPlus, Check, CheckCircle2, ChevronRight, Clock, Download, Eye, EyeOff, FileText, Home, ImageOff, ImagePlus, LoaderCircle, LogOut, MapPin, MessageCircle, MoreHorizontal, Package, Pencil, PlusCircle, ReceiptText, RotateCcw, Save, Scissors, Search, Share2, ShoppingBag, Smartphone, Trash, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
-import { cancelInvoice, checkSession, deleteAppointment, deleteCustomer, deleteInvoice, deleteOrder, deleteProduct, getAdminData, getPushSetup, login, logout, removePushSubscription, savePushSubscription, sendTestPush, purgeAppointment, purgeCustomer, purgeInvoice, purgeOrder, purgeProduct, registerPayment, restoreAppointment, restoreCustomer, restoreInvoice, restoreOrder, restoreProduct, saveAppointmentAdmin, saveContent, saveCustomer, saveProduct, updateAppointmentStatus, updateOrderStatus } from '@/lib/store'
+import { AlertTriangle, ArrowLeft, Ban, Bell, BellOff, BellRing, Boxes, Layers, PiggyBank, ShoppingCart, Calendar, CalendarPlus, Check, CheckCircle2, ChevronRight, Clock, Download, Eye, EyeOff, FileText, Home, ImageOff, ImagePlus, LoaderCircle, LogOut, MapPin, MessageCircle, MoreHorizontal, Package, Pencil, PlusCircle, ReceiptText, RotateCcw, Save, Scissors, Search, Share2, ShoppingBag, Smartphone, Trash, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { cancelInvoice, checkSession, deleteAppointment, deleteCustomer, deleteInvoice, deleteOrder, deleteExpense, deleteProduct, deletePurchase, getAdminData, recordExpense, recordManualSale, recordPurchase, getPushSetup, login, logout, removePushSubscription, savePushSubscription, sendTestPush, purgeAppointment, purgeCustomer, purgeInvoice, purgeOrder, purgeProduct, registerPayment, restoreAppointment, restoreCustomer, restoreInvoice, restoreOrder, restoreProduct, saveAppointmentAdmin, saveContent, saveCustomer, saveProduct, updateAppointmentStatus, updateOrderStatus } from '@/lib/store'
 import type { InvoiceLike, PaymentLike } from '@/lib/invoice'
 import { compressImage } from '@/lib/image'
 import { formatMoney } from '@/lib/money'
 import { fromBase64Url } from '@/lib/push'
 
-type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
-type Order = { id: number; orderNumber: string; customerId: number | null; customerName: string; email: string; phone: string; address: string; total: number; status: string; paymentStatus: string; items: Array<{ id: number; name: string; price: number; quantity: number }>; createdAt: string | Date }
+type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; cost: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
+type Purchase = { id: number; productId: number; productName: string; fund: string; quantity: number; unitCost: number; totalCost: number; remainingQuantity: number; notes: string; createdAt: string | Date }
+type Expense = { id: number; type: string; description: string; amount: number; createdAt: string | Date }
+type Order = { id: number; orderNumber: string; customerId: number | null; customerName: string; email: string; phone: string; address: string; total: number; status: string; paymentStatus: string; items: Array<{ id: number; name: string; price: number; quantity: number; cost?: number; reinvCost?: number; reinvQty?: number }>; createdAt: string | Date }
 type Appointment = { id: number; appointmentNumber: string; customerId: number | null; customerName: string; phone: string; email: string; serviceId: number | null; serviceName: string; price: number; date: string; time: string; notes: string; status: string; paymentStatus: string; createdAt: string | Date }
 type Customer = { id: number; name: string; email: string; phone: string; address: string; notes: string; createdAt: string | Date }
 type Invoice = InvoiceLike & { sourceId: number; customerId: number | null }
@@ -23,11 +25,20 @@ type TrashData = {
   images: TrashImage[]
   invoices: Array<Invoice & { daysLeft: number }>
 }
-type AdminData = { products: Product[]; orders: Order[]; appointments: Appointment[]; customers: Customer[]; invoices: Invoice[]; payments: Payment[]; content: Record<string, string>; trash: TrashData }
-type Tab = 'resumen' | 'citas' | 'pedidos' | 'facturas' | 'catalogo' | 'clientes' | 'contenido' | 'app' | 'papelera'
-const TAB_IDS: Tab[] = ['resumen', 'citas', 'pedidos', 'facturas', 'catalogo', 'clientes', 'contenido', 'app', 'papelera']
+type AdminData = { products: Product[]; orders: Order[]; appointments: Appointment[]; customers: Customer[]; invoices: Invoice[]; payments: Payment[]; purchases: Purchase[]; expenses: Expense[]; content: Record<string, string>; trash: TrashData }
+type Tab = 'resumen' | 'citas' | 'pedidos' | 'facturas' | 'catalogo' | 'finanzas' | 'clientes' | 'contenido' | 'app' | 'papelera'
+const TAB_IDS: Tab[] = ['resumen', 'citas', 'pedidos', 'facturas', 'catalogo', 'finanzas', 'clientes', 'contenido', 'app', 'papelera']
 type CustomerDraft = { id?: number; name: string; email: string; phone: string; address: string; notes: string }
-type ProductDraft = { id?: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
+type ProductDraft = { id?: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
+type Fund = 'capital' | 'reinversion'
+type PurchaseDraft = { productId: string; quantity: string; unitCost: string; fund: Fund; notes: string }
+type SaleLine = { productId: string; quantity: string; price: string }
+type SaleDraft = { customerName: string; phone: string; notes: string; paid: boolean; lines: SaleLine[] }
+type ExpenseDraft = { type: 'negocio' | 'personal'; description: string; amount: string }
+type CatalogFilter = 'todos' | 'agotados' | 'bajo' | 'sincosto' | 'ocultos'
+const FUND_LABEL: Record<Fund, string> = { capital: 'Dinero del negocio', reinversion: 'Dinero para reinvertir' }
+const LOW_STOCK = 3
+const toCents = (value: string | number) => Math.round(Number(value || 0) * 100)
 type AppointmentDraft = { name: string; phone: string; email: string; serviceId: number; date: string; time: string; notes: string }
 type TrashKind = 'product' | 'customer' | 'order' | 'appointment' | 'invoice'
 type Toast = { id: number; text: string; kind: 'ok' | 'error' }
@@ -68,7 +79,7 @@ const waLink = (phone: string, text = '') => {
   return `https://wa.me/${digits}${text ? `?text=${encodeURIComponent(text)}` : ''}`
 }
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches' }
-const blankProduct = (kind = 'servicio'): ProductDraft => ({ kind, name: '', category: '', description: '', price: 0, stock: 0, durationMinutes: 30, image: '', featured: false, active: true })
+const blankProduct = (kind = 'servicio'): ProductDraft => ({ kind, name: '', category: '', description: '', price: 0, originalPrice: 0, stock: 0, durationMinutes: 30, image: '', featured: false, active: true })
 const blankCustomer: CustomerDraft = { name: '', email: '', phone: '', address: '', notes: '' }
 const ORDER_STATUSES = ['Pendiente', 'Preparando', 'Enviado', 'Entregado', 'Cancelado']
 const APPOINTMENT_STATUSES = ['Pendiente', 'Confirmada', 'Completada', 'Cancelada']
@@ -329,6 +340,13 @@ export function AdminPanel() {
   const [contentDraft, setContentDraft] = useState<Record<string, string>>({})
   const [contentDirty, setContentDirty] = useState(false)
   const [pushReady, setPushReady] = useState(true)
+  const [purchaseDraft, setPurchaseDraft] = useState<PurchaseDraft | null>(null)
+  const [saleDraft, setSaleDraft] = useState<SaleDraft | null>(null)
+  const [expenseDraft, setExpenseDraft] = useState<ExpenseDraft | null>(null)
+  const [lotsProductId, setLotsProductId] = useState<number | null>(null)
+  const [catalogFilter, setCatalogFilter] = useState<CatalogFilter>('todos')
+  const [financeView, setFinanceView] = useState<'compras' | 'gastos'>('compras')
+  const [financeSettings, setFinanceSettings] = useState({ capitalInicial: '0', reinvestPercent: '70' })
 
   function notify(text: string, kind: Toast['kind'] = 'ok') {
     const id = Date.now() + Math.random()
@@ -340,6 +358,7 @@ export function AdminPanel() {
     const result = await getAdminData()
     setData(result as unknown as AdminData)
     businessInfo = { whatsapp: result.content.whatsapp, location: result.content.location }
+    setFinanceSettings({ capitalInicial: String(Number(result.content.capitalInicial || 0) / 100), reinvestPercent: String(Number(result.content.reinvestPercent ?? 70)) })
     setContentDraft(result.content)
     setContentDirty(false)
   }
@@ -404,7 +423,7 @@ export function AdminPanel() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
-      setEditing(null); setEditingCustomer(null); setBookingDraft(null); setPayingInvoice(null); setViewingInvoice(null); setViewingOrder(null); setViewingAppointment(null); setMoreOpen(false)
+      setEditing(null); setEditingCustomer(null); setBookingDraft(null); setPayingInvoice(null); setViewingInvoice(null); setViewingOrder(null); setViewingAppointment(null); setMoreOpen(false); setPurchaseDraft(null); setSaleDraft(null); setExpenseDraft(null); setLotsProductId(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -433,7 +452,16 @@ export function AdminPanel() {
 
   async function handleProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!editing) return; setBusy(true); setError('')
-    try { await saveProduct({ data: { ...editing, price: Number(editing.price), stock: Number(editing.stock), durationMinutes: Number(editing.durationMinutes) } }); const wasNew = !editing.id; setEditing(null); await refresh(); notify(wasNew ? 'Artículo creado.' : 'Cambios guardados.') }
+    try {
+      const id = await saveProduct({ data: { ...editing, price: Number(editing.price), originalPrice: Number(editing.originalPrice || 0), stock: Number(editing.stock), durationMinutes: Number(editing.durationMinutes) } })
+      const wasNew = !editing.id
+      const newProduct = wasNew && editing.kind === 'producto'
+      setEditing(null); await refresh()
+      // Un producto nuevo empieza en 0: se abre «Reponer» para registrar
+      // cuántas unidades compraste y a cuánto (igual que en JB).
+      if (newProduct) { setPurchaseDraft({ productId: String(id), quantity: '', unitCost: '', fund: 'capital', notes: '' }); notify('Producto creado. Ahora registra cuántas compraste y a cuánto cada una.') }
+      else notify(wasNew ? 'Servicio creado.' : 'Cambios guardados.')
+    }
     catch (caught) { setError(errorText(caught, 'No pudimos guardar el artículo.')) }
     finally { setBusy(false) }
   }
@@ -512,6 +540,54 @@ export function AdminPanel() {
     await run(() => action({ data: id }), 'Eliminado definitivamente.')
   }
 
+  // ─── Compras, ventas por fuera, gastos (igual que en JB) ───
+  function openPurchase(product?: Product) {
+    setError(''); setLotsProductId(null)
+    setPurchaseDraft({ productId: product ? String(product.id) : '', quantity: '', unitCost: product?.cost ? String(product.cost / 100) : '', fund: 'capital', notes: '' })
+  }
+  function openSale(product?: Product) {
+    setError('')
+    setSaleDraft({ customerName: '', phone: '', notes: '', paid: true, lines: [{ productId: product ? String(product.id) : '', quantity: '1', price: product ? String(product.price / 100) : '' }] })
+  }
+  async function handlePurchase(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!purchaseDraft) return; setBusy(true); setError('')
+    try {
+      const result = await recordPurchase({ data: { productId: Number(purchaseDraft.productId), quantity: Math.round(Number(purchaseDraft.quantity)), unitCost: toCents(purchaseDraft.unitCost), fund: purchaseDraft.fund, notes: purchaseDraft.notes } })
+      setPurchaseDraft(null); await refresh()
+      notify(`Compra registrada por ${money(result.total)}${result.fund === 'reinversion' ? ' con el dinero para reinvertir' : ''}.`)
+    } catch (caught) { setError(errorText(caught, 'No pudimos registrar la compra.')) }
+    finally { setBusy(false) }
+  }
+  async function handleSale(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!saleDraft) return; setBusy(true); setError('')
+    try {
+      const result = await recordManualSale({ data: { customerName: saleDraft.customerName, phone: saleDraft.phone, notes: saleDraft.notes, paid: saleDraft.paid, items: saleDraft.lines.map((line) => ({ productId: Number(line.productId), quantity: Math.round(Number(line.quantity || 0)), price: toCents(line.price) })) } })
+      setSaleDraft(null); await refresh()
+      notify(`Venta ${result.orderNumber} registrada por ${money(result.total)}. Ya se descontó del inventario.`)
+    } catch (caught) { setError(errorText(caught, 'No pudimos registrar la venta.')) }
+    finally { setBusy(false) }
+  }
+  async function handleExpense(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!expenseDraft) return; setBusy(true); setError('')
+    try { await recordExpense({ data: { type: expenseDraft.type, description: expenseDraft.description, amount: toCents(expenseDraft.amount) } }); setExpenseDraft(null); await refresh(); notify('Gasto registrado.') }
+    catch (caught) { setError(errorText(caught, 'No pudimos registrar el gasto.')) }
+    finally { setBusy(false) }
+  }
+  async function confirmDeletePurchase(purchase: Purchase) {
+    const sold = purchase.quantity - purchase.remainingQuantity
+    const pocket = FUND_LABEL[purchase.fund === 'reinversion' ? 'reinversion' : 'capital']
+    const message = sold > 0
+      ? `De esta compra ya se vendieron ${sold}. Se quitarán solo las ${purchase.remainingQuantity} que quedan: salen del inventario y ${money(purchase.remainingQuantity * purchase.unitCost)} vuelven al ${pocket.toLowerCase()}. ¿Continuar?`
+      : `¿Borrar esta compra? Se restan ${purchase.remainingQuantity} unidades del inventario y ${money(purchase.totalCost)} vuelven al ${pocket.toLowerCase()}.`
+    if (!confirm(message)) return
+    await run(() => deletePurchase({ data: purchase.id }), 'Compra borrada.')
+  }
+  async function saveFinanceSettings() {
+    setBusy(true)
+    await run(() => saveContent({ data: { capitalInicial: String(toCents(financeSettings.capitalInicial)), reinvestPercent: String(Math.min(100, Math.max(0, Math.round(Number(financeSettings.reinvestPercent || 0))))) } }), 'Configuración guardada.')
+    setBusy(false)
+  }
+
   async function annulInvoice(invoice: Invoice) {
     const message = invoice.paid > 0
       ? `La factura ${invoice.folio} ya tiene ${money(invoice.paid)} en abonos. Anularla no borra ese historial, pero dejará de contar como saldo pendiente. ¿La anulas?`
@@ -569,7 +645,16 @@ export function AdminPanel() {
   const q = query.trim().toLowerCase()
   const has = (...values: string[]) => !q || values.some((value) => (value || '').toLowerCase().includes(q))
 
-  const filteredProducts = useMemo(() => (data?.products || []).filter((product) => product.kind === catalogKind && has(product.name, product.category)), [data, q, catalogKind])
+  // Unidades en existencia sin una compra registrada detrás: al venderse,
+  // su costo cuenta como RD$0 y la ganancia sale más alta de lo real.
+  const uncostedIds = useMemo(() => {
+    const remaining = new Map<number, number>()
+    for (const purchase of data?.purchases || []) remaining.set(purchase.productId, (remaining.get(purchase.productId) ?? 0) + purchase.remainingQuantity)
+    return new Set((data?.products || []).filter((product) => product.kind === 'producto' && product.stock > (remaining.get(product.id) ?? 0) && product.cost === 0).map((product) => product.id))
+  }, [data])
+  const matchesCatalogFilter = (product: Product, filter: CatalogFilter) =>
+    filter === 'todos' ? true : filter === 'agotados' ? product.stock === 0 : filter === 'bajo' ? product.stock > 0 && product.stock <= LOW_STOCK : filter === 'sincosto' ? uncostedIds.has(product.id) : !product.active
+  const filteredProducts = useMemo(() => (data?.products || []).filter((product) => product.kind === catalogKind && has(product.name, product.category) && (catalogKind === 'servicio' || matchesCatalogFilter(product, catalogFilter))), [data, q, catalogKind, catalogFilter, uncostedIds])
   const filteredCustomers = useMemo(() => (data?.customers || []).filter((customer) => has(customer.name, customer.email, customer.phone)), [data, q])
 
   const filteredOrders = useMemo(() => {
@@ -616,7 +701,7 @@ export function AdminPanel() {
   const upcomingAppointments = data.appointments.filter((item) => item.date >= today && item.status !== 'Cancelada' && item.status !== 'Completada').sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
   const toConfirm = upcomingAppointments.filter((item) => item.status === 'Pendiente').length
   const openOrders = data.orders.filter((order) => order.status === 'Pendiente' || order.status === 'Preparando')
-  const lowStockProducts = data.products.filter((product) => product.kind === 'producto' && product.active && product.stock <= 5)
+  const lowStockProducts = data.products.filter((product) => product.kind === 'producto' && product.active && product.stock <= LOW_STOCK)
   const services = data.products.filter((product) => product.kind === 'servicio')
   const trashCount = data.trash.products.length + data.trash.orders.length + data.trash.appointments.length + data.trash.customers.length + data.trash.invoices.length
   // Las ventanas de detalle muestran siempre los datos al día (después de
@@ -627,12 +712,59 @@ export function AdminPanel() {
   const invoiceBoxFor = (invoice: Invoice | null) => invoice ? <InvoiceBox invoice={invoice} doc={docFor(invoice)} payments={paymentsFor(invoice.id)} onPay={() => { setError(''); setPayingInvoice(invoice) }} /> : <p className="invoice-summary">Este registro no tiene factura.</p>
   const newBooking = (): AppointmentDraft => ({ name: '', phone: '', email: '', serviceId: services[0]?.id ?? 0, date: today, time: '10:00', notes: '' })
 
+  // ─── Finanzas (mismas cuentas que JB Tech Store) ───
+  // Solo cuentan pedidos y citas "Pagado" que no estén cancelados. `cost` de
+  // cada línea es lo que costó esa unidad (sale de su lote de compra). Las
+  // citas (servicios) no tienen costo de mercancía: todo es ganancia.
+  const paidOrders = data.orders.filter((order) => order.paymentStatus === 'Pagado' && order.status !== 'Cancelado')
+  const paidAppointments = data.appointments.filter((item) => item.paymentStatus === 'Pagado' && item.status !== 'Cancelada')
+  const ventasProductos = paidOrders.reduce((sum, order) => sum + order.total, 0)
+  const ventasServicios = paidAppointments.reduce((sum, item) => sum + item.price, 0)
+  const ingresos = ventasProductos + ventasServicios
+  const costoVentas = paidOrders.reduce((sum, order) => sum + order.items.reduce((acc, item) => acc + (item.cost ?? 0) * item.quantity, 0), 0)
+  const gananciaBruta = ingresos - costoVentas
+  // El «Dinero para reinvertir» es de la dueña, como su cartera: si compra
+  // mercancía con él, al venderla lo que costó vuelve a esa caja y lo que
+  // ganó es 100% suyo (va directo a «Puedes retirar», no se reparte).
+  let ventasReinv = 0
+  let recuperadoReinv = 0
+  for (const order of paidOrders) for (const item of order.items) {
+    const reinvQty = Math.min(item.quantity, Math.max(0, item.reinvQty ?? 0))
+    if (!reinvQty) continue
+    ventasReinv += item.price * reinvQty
+    recuperadoReinv += item.reinvCost ?? 0
+  }
+  const gananciaPropia = ventasReinv - recuperadoReinv
+  const gananciaNegocio = gananciaBruta - gananciaPropia
+  const gastadoReinv = data.purchases.filter((purchase) => purchase.fund === 'reinversion').reduce((sum, purchase) => sum + purchase.totalCost, 0)
+  const gastadoCapital = data.purchases.filter((purchase) => purchase.fund !== 'reinversion').reduce((sum, purchase) => sum + purchase.totalCost, 0)
+  const recuperadoCapital = costoVentas - recuperadoReinv
+  const capitalInicial = Number(data.content.capitalInicial || 0)
+  const gastosNegocio = data.expenses.filter((expense) => expense.type === 'negocio').reduce((sum, expense) => sum + expense.amount, 0)
+  const gastosPersonales = data.expenses.filter((expense) => expense.type === 'personal').reduce((sum, expense) => sum + expense.amount, 0)
+  const capitalDisponible = capitalInicial - gastadoCapital + recuperadoCapital - gastosNegocio
+  const reinvestPercent = Number(data.content.reinvestPercent ?? 70)
+  const reinversion = Math.round((gananciaNegocio * reinvestPercent) / 100)
+  const paraTi = gananciaNegocio - reinversion
+  const dineroReinvertir = reinversion - gastadoReinv + recuperadoReinv
+  const disponibleRetirar = paraTi + gananciaPropia - gastosPersonales
+  const inventoryValue = data.purchases.reduce((sum, purchase) => sum + purchase.remainingQuantity * purchase.unitCost, 0)
+  const unpaidOrders = data.orders.filter((order) => order.paymentStatus !== 'Pagado' && order.status !== 'Cancelado')
+  const unpaidAppointments = data.appointments.filter((item) => item.paymentStatus !== 'Pagado' && item.status !== 'Cancelada' && item.status !== 'Pendiente')
+  const porCobrar = unpaidOrders.reduce((sum, order) => sum + order.total, 0) + unpaidAppointments.reduce((sum, item) => sum + item.price, 0)
+  const goods = data.products.filter((product) => product.kind === 'producto')
+  const uncostedProducts = goods.filter((product) => uncostedIds.has(product.id))
+  const lotsProduct = lotsProductId ? data.products.find((product) => product.id === lotsProductId) ?? null : null
+  const purchaseProduct = purchaseDraft ? goods.find((product) => String(product.id) === purchaseDraft.productId) : undefined
+  const purchaseTotal = purchaseDraft ? Math.round(Number(purchaseDraft.quantity || 0)) * toCents(purchaseDraft.unitCost) : 0
+
   const tabs: { id: Tab; label: string; hint: string; group: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'resumen', label: 'Inicio', hint: 'Lo más importante de hoy', group: 'Día a día', icon: <Home /> },
     { id: 'citas', label: 'Citas', hint: 'Agenda de servicios', group: 'Día a día', icon: <Calendar />, badge: toConfirm },
     { id: 'pedidos', label: 'Pedidos', hint: 'Compras de productos', group: 'Día a día', icon: <ShoppingBag />, badge: openOrders.length },
     { id: 'facturas', label: 'Cobros', hint: 'Facturas, abonos y saldos', group: 'Día a día', icon: <Wallet /> },
-    { id: 'catalogo', label: 'Catálogo', hint: 'Servicios y productos', group: 'Tu tienda', icon: <Boxes /> },
+    { id: 'catalogo', label: 'Catálogo', hint: 'Servicios, productos y existencias', group: 'Tu tienda', icon: <Boxes />, badge: goods.filter((product) => product.active && product.stock <= LOW_STOCK).length },
+    { id: 'finanzas', label: 'Finanzas', hint: 'Ganancia, compras, gastos y lo que puedes retirar', group: 'Tu tienda', icon: <PiggyBank /> },
     { id: 'clientes', label: 'Clientes', hint: 'Tus clientas y su historial', group: 'Tu tienda', icon: <Users /> },
     { id: 'contenido', label: 'Textos de la web', hint: 'Lo que se lee en la tienda', group: 'Tu tienda', icon: <FileText /> },
     { id: 'app', label: 'App y avisos', hint: 'Instalar la app y recibir notificaciones', group: 'Ajustes', icon: <BellRing /> },
@@ -646,6 +778,11 @@ export function AdminPanel() {
   const chips = (options: Array<[string, string, number?]>) => <div className="filter-chips">{options.map(([value, label, count]) => <button key={value} className={filter === value ? 'active' : ''} onClick={() => setFilter(value)}>{label}{count !== undefined && <b>{count}</b>}</button>)}</div>
   const orderCard = (order: Order) => <OrderCard key={order.id} order={order} invoice={findInvoiceFor('pedido', order.id)} onChange={(status, paymentStatus) => changeStatus('order', order, status, paymentStatus)} onOpen={() => setViewingOrder(order)} onInvoice={(invoice) => setViewingInvoice(invoice)} onDelete={() => sendToTrash('order', order, order.orderNumber)} />
   const appointmentCard = (item: Appointment) => <AppointmentCard key={item.id} item={item} invoice={findInvoiceFor('cita', item.id)} onChange={(status, paymentStatus) => changeStatus('appointment', item, status, paymentStatus)} onOpen={() => setViewingAppointment(item)} onInvoice={(invoice) => setViewingInvoice(invoice)} onDelete={() => sendToTrash('appointment', item, item.appointmentNumber)} />
+  const chipsCatalog = () => <div className="filter-chips">{([['todos', 'Todos'], ['agotados', 'Agotados'], ['bajo', 'Quedan pocos'], ['sincosto', 'Sin costo'], ['ocultos', 'Ocultos']] as Array<[CatalogFilter, string]>).map(([id, label]) => {
+    const count = goods.filter((product) => matchesCatalogFilter(product, id)).length
+    if (id !== 'todos' && count === 0) return null
+    return <button key={id} className={`${catalogFilter === id ? 'active' : ''} ${id === 'sincosto' ? 'warn' : ''}`} onClick={() => setCatalogFilter(id)}>{label}<b>{count}</b></button>
+  })}</div>
   const searchBox = (placeholder: string) => <label className="search-field"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={placeholder} />{query && <button type="button" aria-label="Borrar búsqueda" onClick={() => setQuery('')}><X size={14} /></button>}</label>
 
   return <div className="admin-shell">
@@ -688,12 +825,14 @@ export function AdminPanel() {
         <h3 className="dash-subtitle">Acciones rápidas</h3>
         <div className="quick-actions">
           <button onClick={() => setBookingDraft(newBooking())} disabled={!services.length}><CalendarPlus />Nueva cita</button>
+          <button onClick={() => openSale()} disabled={!goods.some((product) => product.stock > 0)}><ShoppingCart />Registrar venta</button>
+          <button onClick={() => openPurchase()} disabled={!goods.length}><ShoppingBag />Registrar compra</button>
           <button onClick={() => { goTo('catalogo'); setCatalogKind('producto'); setEditing(blankProduct('producto')) }}><PlusCircle />Nuevo producto</button>
           <button onClick={() => { goTo('catalogo'); setCatalogKind('servicio'); setEditing(blankProduct('servicio')) }}><Scissors />Nuevo servicio</button>
           <button onClick={() => { goTo('clientes'); setEditingCustomer(blankCustomer) }}><UserPlus />Nuevo cliente</button>
         </div>
 
-        {lowStockProducts.length > 0 && <div className="admin-notice"><AlertTriangle size={16} /><div><strong>Quedan pocas unidades:</strong> {lowStockProducts.map((product) => `${product.name} (${product.stock})`).join(', ')}.</div><button onClick={() => { goTo('catalogo'); setCatalogKind('producto') }}>Revisar</button></div>}
+        {lowStockProducts.length > 0 && <div className="admin-notice"><AlertTriangle size={16} /><div><strong>Quedan pocas unidades:</strong> {lowStockProducts.map((product) => `${product.name} (${product.stock})`).join(', ')}.</div><button onClick={() => { goTo('catalogo'); setCatalogKind('producto'); setCatalogFilter('bajo') }}>Reponer</button></div>}
 
         <div className="dashboard-columns">
           <section className="admin-card">
@@ -731,18 +870,71 @@ export function AdminPanel() {
 
       {tab === 'catalogo' && <section className="admin-card">
         <div className="card-title"><div><span>LO QUE OFRECES</span><h2>{filteredProducts.length} {catalogKind === 'servicio' ? (filteredProducts.length === 1 ? 'servicio' : 'servicios') : (filteredProducts.length === 1 ? 'producto' : 'productos')}</h2></div><button className="admin-action" onClick={() => { setError(''); setEditing(blankProduct(catalogKind)) }}><PlusCircle />{catalogKind === 'servicio' ? 'Nuevo servicio' : 'Nuevo producto'}</button></div>
-        <div className="segmented"><button className={catalogKind === 'servicio' ? 'active' : ''} onClick={() => setCatalogKind('servicio')}><Scissors size={15} />Servicios <b>{services.length}</b></button><button className={catalogKind === 'producto' ? 'active' : ''} onClick={() => setCatalogKind('producto')}><Package size={15} />Productos <b>{data.products.length - services.length}</b></button></div>
+        <div className="segmented"><button className={catalogKind === 'servicio' ? 'active' : ''} onClick={() => setCatalogKind('servicio')}><Scissors size={15} />Servicios <b>{services.length}</b></button><button className={catalogKind === 'producto' ? 'active' : ''} onClick={() => setCatalogKind('producto')}><Package size={15} />Productos <b>{goods.length}</b></button></div>
+        {catalogKind === 'producto' && <div className="catalog-tools">
+          <button className="act-inline" onClick={() => openSale()} disabled={!goods.some((product) => product.stock > 0)}><ShoppingCart size={16} />Registrar venta</button>
+          <button className="act-inline" onClick={() => openPurchase()} disabled={!goods.length}><ShoppingBag size={16} />Registrar compra</button>
+        </div>}
         {searchBox("Buscar por nombre o categoría…")}
-        <div className="admin-product-list">{filteredProducts.map((product) => <article key={product.id} className={product.active ? '' : 'is-hidden'}>
-          <img src={product.image || '/placeholder.png'} alt="" loading="lazy" />
-          <div><span>{product.category}{product.featured && ' · Destacado'}{!product.active && ' · Oculto'}</span><h3>{product.name}</h3><p><strong>{money(product.price)}</strong> · {product.kind === 'servicio' ? <><Clock size={12} /> {product.durationMinutes} min</> : <span className={product.stock === 0 ? 'stock-tag out' : product.stock <= 5 ? 'stock-tag low' : 'stock-tag'}>{product.stock === 0 ? 'Agotado' : `${product.stock} disponibles`}</span>}</p></div>
-          <div className="row-actions">
-            <button title={product.active ? 'Ocultar de la tienda' : 'Mostrar en la tienda'} onClick={() => run(() => saveProduct({ data: { ...product, active: !product.active } }), product.active ? 'Oculto de la tienda.' : 'Visible en la tienda.')}>{product.active ? <Eye /> : <EyeOff />}</button>
-            <button title="Editar" onClick={() => { setError(''); setEditing(product) }}><Pencil /></button>
-            <button title="Eliminar" onClick={() => { if (confirm(`¿Enviar "${product.name}" a la papelera? Podrás restaurarlo durante 30 días.`)) run(() => deleteProduct({ data: product.id }), 'Enviado a la papelera.') }}><Trash2 /></button>
-          </div>
-        </article>)}{!filteredProducts.length && <div className="empty-admin">{q ? 'No hay resultados para esa búsqueda.' : catalogKind === 'servicio' ? 'Todavía no hay servicios. Crea el primero.' : 'Todavía no hay productos. Crea el primero.'}</div>}</div>
+        {catalogKind === 'producto' && chipsCatalog()}
+        {catalogKind === 'producto' && uncostedProducts.length > 0 && catalogFilter !== 'sincosto' && <div className="admin-notice"><AlertTriangle size={16} /><div>{uncostedProducts.length === 1 ? '1 producto tiene' : `${uncostedProducts.length} productos tienen`} unidades sin una compra registrada: su costo cuenta como RD$0 y la ganancia sale más alta de lo real.</div><button onClick={() => setCatalogFilter('sincosto')}>Ver cuáles</button></div>}
+        {catalogKind === 'producto' && catalogFilter === 'sincosto' && <p className="section-help">Para corregirlo: toca «Editar», pon las unidades en 0 y guarda; después toca «Reponer» y registra cuántas tienes y a cuánto te salió cada una.</p>}
+        <div className="record-list">{filteredProducts.map((product) => catalogKind === 'producto' ? <ProductCard key={product.id} product={product} noCost={uncostedIds.has(product.id)} lots={data.purchases.filter((purchase) => purchase.productId === product.id).length} onEdit={() => { setError(''); setEditing(product) }} onRestock={() => openPurchase(product)} onSell={() => openSale(product)} onLots={() => setLotsProductId(product.id)} onDelete={() => { if (confirm(`¿Enviar "${product.name}" a la papelera? Deja de verse en la tienda; lo puedes restaurar durante 30 días.`)) run(() => deleteProduct({ data: product.id }), 'Enviado a la papelera.') }} />
+          : <ServiceCard key={product.id} product={product} onEdit={() => { setError(''); setEditing(product) }} onToggle={() => run(() => saveProduct({ data: { ...product, active: !product.active } }), product.active ? 'Oculto de la tienda.' : 'Visible en la tienda.')} onDelete={() => { if (confirm(`¿Enviar "${product.name}" a la papelera? Podrás restaurarlo durante 30 días.`)) run(() => deleteProduct({ data: product.id }), 'Enviado a la papelera.') }} />)}</div>
+        {!filteredProducts.length && <div className="empty-admin">{q || catalogFilter !== 'todos' ? 'No hay resultados en esta lista.' : catalogKind === 'servicio' ? 'Todavía no hay servicios. Crea el primero.' : 'Todavía no hay productos. Crea el primero.'}</div>}
       </section>}
+
+      {tab === 'finanzas' && <div className="dashboard">
+        <div className="quick-actions three">
+          <button onClick={() => openSale()} disabled={!goods.some((product) => product.stock > 0)}><ShoppingCart />Registrar venta</button>
+          <button onClick={() => openPurchase()} disabled={!goods.length}><ShoppingBag />Registrar compra</button>
+          <button onClick={() => { setError(''); setExpenseDraft({ type: 'negocio', description: '', amount: '' }) }}><Wallet />Registrar gasto</button>
+        </div>
+        <div className="money-hero">
+          <div className="money-card"><span>Dinero del negocio</span><strong>{money(capitalDisponible)}</strong><small>Lo que hay para comprar mercancía</small></div>
+          <div className="money-card"><span>Dinero para reinvertir</span><strong>{money(dineroReinvertir)}</strong><small>Tu {reinvestPercent}% de la ganancia, para comprar más mercancía</small></div>
+          <div className="money-card accent"><span>Puedes retirar</span><strong>{money(disponibleRetirar)}</strong><small>Tu {100 - reinvestPercent}% de la ganancia{gananciaPropia !== 0 ? ', más lo que ganaste con el dinero para reinvertir,' : ''} menos tus gastos personales</small></div>
+          <div className="money-card"><span>Ganancia</span><strong>{money(gananciaBruta)}</strong><small>De lo ya pagado: productos y servicios</small></div>
+          <div className="money-card"><span>Mercancía en existencia</span><strong>{money(inventoryValue)}</strong><small>Lo que costó lo que todavía no se ha vendido</small></div>
+        </div>
+        {porCobrar > 0 && <div className="admin-notice"><AlertTriangle size={16} /><div>Te deben {money(porCobrar)} de pedidos y citas sin pagar. Cuando los marques «Pagado» se suman aquí.</div><button onClick={() => goTo('facturas', 'porcobrar')}>Ver</button></div>}
+        {uncostedProducts.length > 0 && <div className="admin-notice"><AlertTriangle size={16} /><div>{uncostedProducts.length === 1 ? '1 producto tiene' : `${uncostedProducts.length} productos tienen`} unidades sin compra registrada ({uncostedProducts.slice(0, 4).map((product) => product.name).join(', ')}): la ganancia sale más alta de lo real.</div><button onClick={() => { goTo('catalogo'); setCatalogKind('producto'); setCatalogFilter('sincosto') }}>Corregir</button></div>}
+
+        <details className="admin-card finance-details">
+          <summary><h3>Ver todas las cuentas (cómo se calcula)</h3><ChevronRight size={18} /></summary>
+          <h4>Ventas</h4>
+          <div className="finance-grid"><div><span>Productos vendidos (pagado)</span><strong>{money(ventasProductos)}</strong></div><div><span>Servicios cobrados</span><strong>{money(ventasServicios)}</strong></div><div><span>Costo de lo vendido</span><strong>{money(costoVentas)}</strong></div><div><span>Ganancia del negocio</span><strong>{money(gananciaNegocio)}</strong></div><div><span>Ganancia de tu dinero para reinvertir</span><strong>{money(gananciaPropia)}</strong></div></div>
+          <h4>Dinero del negocio</h4>
+          <div className="finance-grid"><div><span>Capital inicial</span><strong>{money(capitalInicial)}</strong></div><div><span>Gastado en compras</span><strong>{money(gastadoCapital)}</strong></div><div><span>Recuperado al vender</span><strong>{money(recuperadoCapital)}</strong></div><div><span>Gastos del negocio</span><strong>{money(gastosNegocio)}</strong></div></div>
+          <h4>Dinero para reinvertir</h4>
+          <div className="finance-grid"><div><span>Reinversión ({reinvestPercent}%)</span><strong>{money(reinversion)}</strong></div><div><span>Gastado en compras</span><strong>{money(gastadoReinv)}</strong></div><div><span>Recuperado al vender</span><strong>{money(recuperadoReinv)}</strong></div></div>
+          <h4>Lo tuyo</h4>
+          <div className="finance-grid"><div><span>Para ti ({100 - reinvestPercent}%)</span><strong>{money(paraTi)}</strong></div><div><span>Ganancia de tu dinero para reinvertir</span><strong>{money(gananciaPropia)}</strong></div><div><span>Gastos personales</span><strong>{money(gastosPersonales)}</strong></div></div>
+          <p className="section-help">Dinero del negocio = capital inicial − lo que compraste con él + lo que vuelve al vender esa mercancía − gastos del negocio.</p>
+          <p className="section-help">Dinero para reinvertir = el {reinvestPercent}% de la ganancia del negocio − lo que compraste con él + lo que vuelve al vender esa mercancía. Ese dinero es tuyo: lo que ganes con la mercancía que compres con él es 100% tuyo y va directo a «Puedes retirar».</p>
+          <p className="section-help">Puedes retirar = el {100 - reinvestPercent}% de la ganancia del negocio + la ganancia de tu dinero para reinvertir − tus gastos personales. Solo cuentan los pedidos y citas «Pagado» que no estén cancelados.</p>
+        </details>
+
+        <section className="admin-card">
+          <div className="segmented"><button className={financeView === 'compras' ? 'active' : ''} onClick={() => setFinanceView('compras')}><Layers size={15} />Compras <b>{data.purchases.length}</b></button><button className={financeView === 'gastos' ? 'active' : ''} onClick={() => setFinanceView('gastos')}><Wallet size={15} />Gastos <b>{data.expenses.length}</b></button></div>
+          {financeView === 'compras' && <>
+            <p className="section-help"><Layers size={14} />Cada compra es un lote con su costo. Al vender, sale primero del lote más viejo («Se vende ahora»); cuando se acaba, sigue el próximo.</p>
+            <div className="record-list">{data.purchases.map((lot) => <LotCard key={lot.id} lot={lot} status={lotStatus(lot, data.purchases)} showProduct onDelete={() => confirmDeletePurchase(lot)} />)}</div>
+            {!data.purchases.length && <div className="empty-admin">Todavía no has registrado compras. Usa «Registrar compra» o «Reponer» en cada producto.</div>}
+          </>}
+          {financeView === 'gastos' && <>
+            <div className="record-list">{data.expenses.map((expense) => <article key={expense.id} className="record-card"><header className="record-head"><div><strong className="record-name">{expense.description}</strong><small>{shortDate(expense.createdAt)}</small></div><strong className="record-amount">{money(expense.amount)}</strong></header><div className="expense-foot"><span className={`status-pill ${expense.type === 'personal' ? 'status-abonado' : 'status-confirmada'}`}>{expense.type === 'personal' ? 'Personal' : 'Negocio'}</span><button className="text-danger" onClick={() => { if (confirm('¿Borrar este gasto?')) run(() => deleteExpense({ data: expense.id }), 'Gasto borrado.') }}><Trash2 size={15} />Borrar</button></div></article>)}</div>
+            {!data.expenses.length && <div className="empty-admin">Todavía no has registrado gastos.</div>}
+          </>}
+        </section>
+
+        <details className="admin-card finance-details">
+          <summary><h3>Configuración (capital inicial y % que se reinvierte)</h3><ChevronRight size={18} /></summary>
+          <div className="form-grid"><label className="field">Capital inicial (RD$)<input type="number" inputMode="decimal" min={0} step="0.01" value={financeSettings.capitalInicial} onChange={(event) => setFinanceSettings((current) => ({ ...current, capitalInicial: event.target.value }))} /></label><label className="field">% de la ganancia que se reinvierte<input type="number" inputMode="numeric" min={0} max={100} value={financeSettings.reinvestPercent} onChange={(event) => setFinanceSettings((current) => ({ ...current, reinvestPercent: event.target.value }))} /></label></div>
+          <p className="section-help">El capital inicial es el dinero con que empezó el negocio. El resto de la ganancia (el {100 - Math.min(100, Math.max(0, Number(financeSettings.reinvestPercent || 0)))}%) es para ti.</p>
+          <button className="admin-action" disabled={busy} onClick={saveFinanceSettings}><Save />{busy ? 'Guardando...' : 'Guardar configuración'}</button>
+        </details>
+      </div>}
 
       {tab === 'clientes' && <section className="admin-card">
         <div className="card-title"><div><span>COMUNIDAD</span><h2>{filteredCustomers.length} {filteredCustomers.length === 1 ? 'cliente' : 'clientes'}</h2></div><button className="admin-action" onClick={() => { setError(''); setEditingCustomer(blankCustomer) }}><UserPlus />Nuevo cliente</button></div>
@@ -780,7 +972,8 @@ export function AdminPanel() {
         <label className="wide">Nombre<input required value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></label>
         <label className="wide">Descripción<textarea required rows={3} value={editing.description} onChange={(event) => setEditing({ ...editing, description: event.target.value })} /></label>
         <label>Precio (RD$)<input required type="number" inputMode="decimal" min="0" step="0.01" value={editing.price / 100} onChange={(event) => setEditing({ ...editing, price: Math.round(Number(event.target.value) * 100) })} /></label>
-        {editing.kind === 'producto' ? <label>Unidades disponibles<input required type="number" inputMode="numeric" min="0" value={editing.stock} onChange={(event) => setEditing({ ...editing, stock: Number(event.target.value) })} /></label> : <label>Duración (minutos)<input required type="number" inputMode="numeric" min="5" step="5" value={editing.durationMinutes} onChange={(event) => setEditing({ ...editing, durationMinutes: Number(event.target.value) })} /></label>}
+        <label>Precio antes (opcional)<input type="number" inputMode="decimal" min="0" step="0.01" placeholder="Sale tachado si es mayor" value={editing.originalPrice ? editing.originalPrice / 100 : ''} onChange={(event) => setEditing({ ...editing, originalPrice: Math.round(Number(event.target.value || 0) * 100) })} /></label>
+        {editing.kind === 'producto' ? (editing.id ? <label>Unidades en existencia<input required type="number" inputMode="numeric" min="0" value={editing.stock} onChange={(event) => setEditing({ ...editing, stock: Number(event.target.value) })} /><small className="field-hint">Para sumar unidades usa «Reponer» (así queda lo que costaron). Cambia este número solo para corregir.</small></label> : <p className="field-hint wide">Un producto nuevo empieza en 0. Al guardar se abre «Reponer» para poner cuántas compraste y a cuánto.</p>) : <label>Duración (minutos)<input required type="number" inputMode="numeric" min="5" step="5" value={editing.durationMinutes} onChange={(event) => setEditing({ ...editing, durationMinutes: Number(event.target.value) })} /></label>}
         <label className="check-field"><input type="checkbox" checked={editing.active} onChange={(event) => setEditing({ ...editing, active: event.target.checked })} />Visible en la tienda</label>
         <label className="check-field"><input type="checkbox" checked={editing.featured} onChange={(event) => setEditing({ ...editing, featured: event.target.checked })} />Destacado (sale primero)</label>
       </div>
@@ -817,6 +1010,66 @@ export function AdminPanel() {
       <button className="primary-button full" disabled={busy}><Save />{busy ? 'Guardando...' : 'Registrar abono'}</button>
     </form></div>}
 
+    {purchaseDraft && <div className="modal-wrap modal-top" onClick={() => setPurchaseDraft(null)}><form className="product-modal" onSubmit={handlePurchase} onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setPurchaseDraft(null)} aria-label="Cerrar">×</button><span>INVENTARIO</span><h2>Reponer (registrar compra)</h2>
+      <p className="invoice-summary">Pon cuántas compraste y a cuánto te salió cada una. Se suma a la existencia y queda como un lote con su propio costo: lo más viejo se vende primero.</p>
+      {error && <p className="form-error">{error}</p>}
+      <div className="form-grid">
+        <label className="wide">Producto<select required value={purchaseDraft.productId} onChange={(event) => { const next = goods.find((product) => String(product.id) === event.target.value); setPurchaseDraft({ ...purchaseDraft, productId: event.target.value, unitCost: next?.cost ? String(next.cost / 100) : purchaseDraft.unitCost }) }}><option value="" disabled>Elige un producto</option>{[...goods].sort((a, b) => a.name.localeCompare(b.name)).map((product) => <option key={product.id} value={product.id}>{product.name} (hay {product.stock})</option>)}</select></label>
+        <label>Cantidad comprada<input required type="number" inputMode="numeric" min={1} value={purchaseDraft.quantity} onChange={(event) => setPurchaseDraft({ ...purchaseDraft, quantity: event.target.value })} autoFocus /></label>
+        <label>Costo por unidad (RD$)<input required type="number" inputMode="decimal" min={0} step="0.01" value={purchaseDraft.unitCost} onChange={(event) => setPurchaseDraft({ ...purchaseDraft, unitCost: event.target.value })} /></label>
+        <label className="wide">Notas (opcional)<input value={purchaseDraft.notes} onChange={(event) => setPurchaseDraft({ ...purchaseDraft, notes: event.target.value })} placeholder="Ej. proveedor, factura..." /></label>
+      </div>
+      <div className="fund-choice" role="radiogroup" aria-label="¿Con qué dinero?"><span>¿Con qué dinero?</span>
+        {(['capital', 'reinversion'] as const).map((fund) => { const balance = fund === 'capital' ? capitalDisponible : dineroReinvertir; const left = balance - purchaseTotal; return <label key={fund} className={`fund-option ${purchaseDraft.fund === fund ? 'active' : ''}`}><input type="radio" name="fund" checked={purchaseDraft.fund === fund} onChange={() => setPurchaseDraft({ ...purchaseDraft, fund })} /><div><strong>{FUND_LABEL[fund]}</strong><small>Hay {money(balance)}{purchaseTotal > 0 && <> · después quedan <em className={left < 0 ? 'balance-due' : ''}>{money(left)}</em></>}</small></div></label> })}
+      </div>
+      {purchaseTotal > 0 && <p className="sale-total">Total de la compra: <strong>{money(purchaseTotal)}</strong>{purchaseProduct && purchaseProduct.price > 0 && toCents(purchaseDraft.unitCost) > 0 && <> · ganancia por unidad {money(purchaseProduct.price - toCents(purchaseDraft.unitCost))}</>}</p>}
+      <button className="primary-button full" disabled={busy || !purchaseDraft.productId}><Save />{busy ? 'Guardando...' : 'Registrar compra'}</button>
+    </form></div>}
+
+    {saleDraft && <div className="modal-wrap modal-top" onClick={() => setSaleDraft(null)}><form className="product-modal" onSubmit={handleSale} onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setSaleDraft(null)} aria-label="Cerrar">×</button><span>VENTA</span><h2>Registrar venta por fuera</h2>
+      <p className="invoice-summary">Para lo que vendiste en persona o por WhatsApp. Se descuenta del inventario (lo más viejo primero), se crea su pedido y su factura, y cuenta en Finanzas. El precio lo pones tú.</p>
+      {error && <p className="form-error">{error}</p>}
+      {saleDraft.lines.map((line, index) => { const product = goods.find((item) => String(item.id) === line.productId); const lineTotal = Math.round(Number(line.quantity || 0)) * toCents(line.price); const update = (patch: Partial<SaleLine>) => setSaleDraft({ ...saleDraft, lines: saleDraft.lines.map((item, i) => i === index ? { ...item, ...patch } : item) }); return <div className="sale-line" key={index}>
+        <div className="sale-line-head"><strong>Producto {saleDraft.lines.length > 1 ? index + 1 : ''}</strong>{saleDraft.lines.length > 1 && <button type="button" className="text-danger" onClick={() => setSaleDraft({ ...saleDraft, lines: saleDraft.lines.filter((_, i) => i !== index) })}>Quitar</button>}</div>
+        <div className="form-grid">
+          <label className="wide">Producto<select required value={line.productId} onChange={(event) => { const next = goods.find((item) => String(item.id) === event.target.value); update({ productId: event.target.value, price: next ? String(next.price / 100) : line.price }) }}><option value="" disabled>Elige un producto</option>{[...goods].sort((a, b) => a.name.localeCompare(b.name)).map((item) => <option key={item.id} value={item.id} disabled={item.stock <= 0}>{item.name} (hay {item.stock})</option>)}</select></label>
+          <label>Cantidad<input required type="number" inputMode="numeric" min={1} max={product?.stock || undefined} value={line.quantity} onChange={(event) => update({ quantity: event.target.value })} /></label>
+          <label>Precio por unidad (RD$)<input required type="number" inputMode="decimal" min={0} step="0.01" value={line.price} onChange={(event) => update({ price: event.target.value })} /></label>
+        </div>
+        {product && lineTotal > 0 && <p className="sale-total small">{line.quantity} × {money(toCents(line.price))} = <strong>{money(lineTotal)}</strong>{toCents(line.price) < product.price && <> · precio de tienda {money(product.price)}</>}</p>}
+      </div> })}
+      <button type="button" className="admin-action ghost add-line" onClick={() => setSaleDraft({ ...saleDraft, lines: [...saleDraft.lines, { productId: '', quantity: '1', price: '' }] })}><PlusCircle />Agregar otro producto</button>
+      <div className="form-grid">
+        <label>Clienta (opcional)<input list="customer-options-sale" value={saleDraft.customerName} onChange={(event) => { const name = event.target.value; const match = data.customers.find((customer) => customer.name === name); setSaleDraft({ ...saleDraft, customerName: name, phone: match ? match.phone : saleDraft.phone }) }} placeholder="Ej. María Pérez" /><datalist id="customer-options-sale">{data.customers.map((customer) => <option key={customer.id} value={customer.name} />)}</datalist></label>
+        <label>Teléfono (opcional)<input type="tel" inputMode="tel" value={saleDraft.phone} onChange={(event) => setSaleDraft({ ...saleDraft, phone: event.target.value })} /></label>
+        <label>¿Ya te pagaron?<select value={saleDraft.paid ? 'si' : 'no'} onChange={(event) => setSaleDraft({ ...saleDraft, paid: event.target.value === 'si' })}><option value="si">Sí, pagado</option><option value="no">No, queda pendiente</option></select></label>
+        <label>Nota (opcional)<input value={saleDraft.notes} onChange={(event) => setSaleDraft({ ...saleDraft, notes: event.target.value })} placeholder="Ej. venta en feria" /></label>
+      </div>
+      <p className="sale-total">Total de la venta: <strong>{money(saleDraft.lines.reduce((sum, line) => sum + Math.round(Number(line.quantity || 0)) * toCents(line.price), 0))}</strong></p>
+      <button className="primary-button full" disabled={busy}><Save />{busy ? 'Registrando...' : 'Registrar venta'}</button>
+    </form></div>}
+
+    {expenseDraft && <div className="modal-wrap modal-top" onClick={() => setExpenseDraft(null)}><form className="product-modal" onSubmit={handleExpense} onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setExpenseDraft(null)} aria-label="Cerrar">×</button><span>FINANZAS</span><h2>Registrar gasto</h2>
+      {error && <p className="form-error">{error}</p>}
+      <div className="form-grid">
+        <label className="wide">Tipo<select value={expenseDraft.type} onChange={(event) => setExpenseDraft({ ...expenseDraft, type: event.target.value as ExpenseDraft['type'] })}><option value="negocio">Gasto del negocio (sale del dinero del negocio)</option><option value="personal">Gasto o retiro personal (sale de lo tuyo)</option></select></label>
+        <label className="wide">Descripción<input required value={expenseDraft.description} onChange={(event) => setExpenseDraft({ ...expenseDraft, description: event.target.value })} placeholder="Ej. empaques, transporte, retiro..." /></label>
+        <label>Monto (RD$)<input required type="number" inputMode="decimal" min={0} step="0.01" value={expenseDraft.amount} onChange={(event) => setExpenseDraft({ ...expenseDraft, amount: event.target.value })} /></label>
+      </div>
+      <button className="primary-button full" disabled={busy}><Save />{busy ? 'Guardando...' : 'Registrar gasto'}</button>
+    </form></div>}
+
+    {lotsProduct && <div className="modal-wrap" onClick={() => setLotsProductId(null)}><div className="modal-card detail-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close icon-button" onClick={() => setLotsProductId(null)} aria-label="Cerrar"><X /></button>
+      <span className="drawer-kicker">COMPRAS DE</span>
+      <h2>{lotsProduct.name}</h2>
+      <p className="invoice-summary">Cada venta sale primero de la compra más vieja que todavía tenga unidades (la que dice «Se vende ahora»). Cuando esa se acaba, sigue la próxima.</p>
+      {(() => { const lots = data.purchases.filter((lot) => lot.productId === lotsProduct.id).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() || a.id - b.id); const next = lots.find((lot) => lot.remainingQuantity > 0); return <>
+        {next && <p className="next-lot">La próxima venta sale a costo <b>{money(next.unitCost)}</b> (compra del {shortDate(next.createdAt)}).</p>}
+        <div className="record-list compact">{lots.map((lot) => <LotCard key={lot.id} lot={lot} status={lotStatus(lot, data.purchases)} onDelete={() => confirmDeletePurchase(lot)} />)}</div>
+      </> })()}
+      <button className="primary-button full lots-restock" onClick={() => openPurchase(lotsProduct)}><ShoppingBag />Reponer este producto</button>
+    </div></div>}
+
     {liveOrder && <OrderDetail order={liveOrder} invoiceBox={invoiceBoxFor(findInvoiceFor('pedido', liveOrder.id))} onClose={() => setViewingOrder(null)} onDelete={() => sendToTrash('order', liveOrder, liveOrder.orderNumber)} onChange={(status, paymentStatus) => changeStatus('order', liveOrder, status, paymentStatus)} />}
     {liveAppointment && <AppointmentDetail item={liveAppointment} invoiceBox={invoiceBoxFor(findInvoiceFor('cita', liveAppointment.id))} onClose={() => setViewingAppointment(null)} onDelete={() => sendToTrash('appointment', liveAppointment, liveAppointment.appointmentNumber)} onChange={(status, paymentStatus) => changeStatus('appointment', liveAppointment, status, paymentStatus)} />}
     {liveInvoice && <div className="modal-wrap" onClick={() => setViewingInvoice(null)}><div className="modal-card detail-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close icon-button" onClick={() => setViewingInvoice(null)} aria-label="Cerrar"><X /></button>
@@ -828,6 +1081,71 @@ export function AdminPanel() {
       <div className="detail-footer">{liveInvoice.status !== 'Cancelada' && <button className="text-muted-btn" onClick={() => annulInvoice(liveInvoice)}><Ban size={15} />Anular factura</button>}<button className="text-danger" onClick={() => trashInvoice(liveInvoice)}><Trash2 size={15} />Enviar a la papelera</button></div>
     </div></div>}
   </div>
+}
+
+type LotStatus = 'ahora' | 'espera' | 'vendido'
+const LOT_LABEL: Record<LotStatus, string> = { ahora: 'Se vende ahora', espera: 'En espera', vendido: 'Vendido completo' }
+/** El lote que "se vende ahora" es el más viejo de ese producto que todavía tiene unidades. */
+function lotStatus(lot: Purchase, all: Purchase[]): LotStatus {
+  if (lot.remainingQuantity <= 0) return 'vendido'
+  const next = all.filter((other) => other.productId === lot.productId && other.remainingQuantity > 0)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() || a.id - b.id)[0]
+  return next?.id === lot.id ? 'ahora' : 'espera'
+}
+
+function LotCard({ lot, status, showProduct, onDelete }: { lot: Purchase; status: LotStatus; showProduct?: boolean; onDelete: () => void }) {
+  const sold = lot.quantity - lot.remainingQuantity
+  const percent = lot.quantity > 0 ? Math.round((sold / lot.quantity) * 100) : 0
+  return <article className={`record-card lot-card lot-${status}`}>
+    <header className="record-head">
+      <div>{showProduct && <strong className="record-name">{lot.productName}</strong>}<small>{shortDate(lot.createdAt)}{lot.fund === 'reinversion' && <> · <b className="lot-fund">Reinversión</b></>}</small></div>
+      <span className={`lot-badge lot-badge-${status}`}>{LOT_LABEL[status]}</span>
+    </header>
+    <p className="lot-numbers"><b>{lot.quantity} × {money(lot.unitCost)}</b> = {money(lot.totalCost)}</p>
+    <div className="lot-bar" aria-hidden="true"><span style={{ width: `${percent}%` }} /></div>
+    <p className="record-meta">{sold <= 0 ? `Nada vendido todavía · quedan ${lot.remainingQuantity}` : lot.remainingQuantity > 0 ? `Vendidas ${sold} · quedan ${lot.remainingQuantity}` : `Se vendieron las ${lot.quantity}`}{lot.notes ? ` · ${lot.notes}` : ''}</p>
+    {lot.remainingQuantity > 0 && <div className="expense-foot"><span /><button className="text-danger" onClick={onDelete}><Trash2 size={15} />{sold > 0 ? 'Quitar lo que queda' : 'Borrar compra'}</button></div>}
+  </article>
+}
+
+function ProductCard({ product, noCost, lots, onEdit, onRestock, onSell, onLots, onDelete }: { product: Product; noCost: boolean; lots: number; onEdit: () => void; onRestock: () => void; onSell: () => void; onLots: () => void; onDelete: () => void }) {
+  const margin = product.price > 0 && product.cost > 0 ? Math.round(((product.price - product.cost) / product.price) * 100) : null
+  return <article className={`record-card ${product.active ? '' : 'is-closed'}`}>
+    <header className="record-head">
+      <img className="record-thumb" src={product.image || '/placeholder.png'} alt="" loading="lazy" />
+      <div><strong className="record-name">{product.name}</strong><small>{product.category}{product.featured ? ' · Destacado' : ''}</small></div>
+      <div className="record-price">{product.originalPrice > product.price && <s>{money(product.originalPrice)}</s>}<strong className="record-amount">{money(product.price)}</strong></div>
+    </header>
+    <div className="pill-row">
+      <span className={`pill ${product.stock === 0 ? 'bad' : product.stock <= LOW_STOCK ? 'warn' : 'ok'}`}>{product.stock === 0 ? 'Agotado' : `${product.stock} en existencia`}</span>
+      {noCost ? <span className="pill bad">Sin costo registrado</span> : product.cost > 0 && <span className="pill">Costo {money(product.cost)}</span>}
+      {margin !== null && <span className={`pill ${margin < 15 ? 'warn' : ''}`}>Ganancia {margin}%</span>}
+      {!product.active && <span className="pill">Oculto</span>}
+    </div>
+    <div className="card-actions five">
+      <button className="act" onClick={onEdit}><Pencil />Editar</button>
+      <button className="act primary" onClick={onRestock}><ShoppingBag />Reponer</button>
+      <button className="act" disabled={product.stock <= 0} onClick={onSell}><ShoppingCart />Vender</button>
+      <button className="act" disabled={!lots} onClick={onLots}><Layers />Compras</button>
+      <button className="act danger" onClick={onDelete}><Trash2 />Borrar</button>
+    </div>
+  </article>
+}
+
+function ServiceCard({ product, onEdit, onToggle, onDelete }: { product: Product; onEdit: () => void; onToggle: () => void; onDelete: () => void }) {
+  return <article className={`record-card ${product.active ? '' : 'is-closed'}`}>
+    <header className="record-head">
+      <img className="record-thumb" src={product.image || '/placeholder.png'} alt="" loading="lazy" />
+      <div><strong className="record-name">{product.name}</strong><small>{product.category}{product.featured ? ' · Destacado' : ''}</small></div>
+      <div className="record-price">{product.originalPrice > product.price && <s>{money(product.originalPrice)}</s>}<strong className="record-amount">{money(product.price)}</strong></div>
+    </header>
+    <div className="pill-row"><span className="pill"><Clock size={12} /> {product.durationMinutes} min</span>{!product.active && <span className="pill">Oculto</span>}</div>
+    <div className="card-actions">
+      <button className="act" onClick={onEdit}><Pencil />Editar</button>
+      <button className="act" onClick={onToggle}>{product.active ? <EyeOff /> : <Eye />}{product.active ? 'Ocultar' : 'Mostrar'}</button>
+      <button className="act danger" onClick={onDelete}><Trash2 />Borrar</button>
+    </div>
+  </article>
 }
 
 function StatusSelect({ value, options, onChange, label }: { value: string; options: string[]; onChange: (value: string) => void; label: string }) {

@@ -68,3 +68,13 @@ ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un 
 - El PDF de la factura detalla los artículos del pedido y toma WhatsApp/ubicación de "Textos de la web". Se guarda como JPG dentro del PDF (~100 KB).
 - Los productos de ejemplo se ponen una sola vez (`content.productsSeeded`); borrar todos los productos ya no los hace volver.
 - Correo y notificación de un pedido/cita nuevo se mandan al mismo tiempo (`Promise.allSettled`).
+
+## Inventario por lotes (FIFO) y Finanzas (igual que JB Tech Store, sin opciones)
+
+- **Compras por lotes** (tabla `purchases`, creada por `ensureSchema()`): cada «Reponer» crea un lote con su costo y con qué dinero se pagó (`fund`: 'capital' o 'reinversion'). Al vender (pedido de la tienda, venta por fuera o reactivar un pedido) sale primero del lote más viejo con unidades (`takeStock`/`consumeFifoCost`). Cancelar o borrar un pedido devuelve las unidades a sus lotes (`returnStock`). Cada línea del pedido guarda `cost` (por unidad) y, si aplica, `reinvCost`/`reinvQty`.
+- `products.cost` = costo del próximo lote que se vende (lo pone el sistema). `products.original_price` = precio de antes (tachado en la tienda). **La tienda pública nunca recibe `cost`.**
+- Un producto nuevo empieza en 0 y al guardarlo se abre «Reponer». Las existencias viejas sin lote salen como "Sin costo registrado" (su costo cuenta como 0).
+- **Venta por fuera** (`recordManualSale`): crea un pedido `VTA-…` (Entregado) con su factura, y el abono si ya pagaron.
+- **Gastos** (tabla `expenses`): 'negocio' o 'personal'.
+- **Finanzas** (en `AdminPanel.tsx`): cuentan pedidos y citas "Pagado" no cancelados (las citas no tienen costo). Mismas fórmulas que JB: Dinero del negocio = capital inicial − compras con dinero del negocio + (costo de lo vendido − recuperado de reinversión) − gastos del negocio; Dinero para reinvertir = % de la ganancia del negocio − compras con ese dinero + lo recuperado; Puedes retirar = el resto de la ganancia + ganancia propia de la reinversión − gastos personales. `capitalInicial` y `reinvestPercent` están en `content` (privados).
+- El crédito "GADR Net" del pie usa el mismo estilo oficial que JB (letra recta, "Net" en #9FAD90, punto #B2603C).
