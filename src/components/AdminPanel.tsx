@@ -108,18 +108,21 @@ if (typeof window !== 'undefined') {
   })
 }
 
-/** Pone (o quita) el manifest de la app "ELA Admin". Solo con la sesión abierta. */
-function setAdminManifest(enabled: boolean) {
-  const existing = document.getElementById('admin-manifest')
-  if (enabled && !existing) {
-    const link = document.createElement('link')
+/** Qué app se instala desde /admin: sin sesión, la TIENDA (así una clienta
+ * que llegue aquí e instale desde el menú de Chrome se lleva la tienda, que
+ * abre en el inicio); con la sesión abierta, "ELA Admin". Al salir del panel
+ * se quita, para que en la tienda nunca se ofrezca instalar el panel. */
+function setAdminManifest(mode: 'admin' | 'store' | 'off') {
+  let link = document.getElementById('admin-manifest') as HTMLLinkElement | null
+  if (mode === 'off') { link?.remove(); return }
+  if (!link) {
+    link = document.createElement('link')
     link.id = 'admin-manifest'
     link.rel = 'manifest'
-    link.href = '/admin.webmanifest'
     document.head.appendChild(link)
-  } else if (!enabled && existing) {
-    existing.remove()
   }
+  const href = mode === 'admin' ? '/admin.webmanifest' : '/site.webmanifest'
+  if (link.getAttribute('href') !== href) link.setAttribute('href', href)
 }
 
 function isInstalledApp() {
@@ -359,9 +362,10 @@ export function AdminPanel() {
   // Solo con la sesión abierta se ofrece instalar el panel como app, y se
   // revisa si este aparato ya recibe los avisos (para recordarlo en Inicio).
   useEffect(() => {
-    setAdminManifest(authenticated === true)
+    setAdminManifest(authenticated === true ? 'admin' : 'store')
     if (authenticated) pushActiveHere().then(setPushReady).catch(() => setPushReady(true))
   }, [authenticated, tab])
+  useEffect(() => () => setAdminManifest('off'), [])
 
   // La notificación abre /admin?tab=citas o ?tab=pedidos. Al abrir o volver
   // a la app se quitan el punto del ícono y las notificaciones ya vistas.

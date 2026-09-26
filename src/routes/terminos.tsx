@@ -1,7 +1,11 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 
-export const Route = createFileRoute('/terminos')({ component: Terms })
+export const Route = createFileRoute('/terminos')({
+  // Si alguien instala desde aquí, se instala la tienda (abre en el inicio).
+  head: () => ({ links: [{ rel: 'manifest', href: '/site.webmanifest' }] }),
+  component: Terms,
+})
 
 function Terms() {
   return (

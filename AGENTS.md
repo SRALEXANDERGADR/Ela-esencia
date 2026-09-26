@@ -52,7 +52,8 @@ ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un 
 
 ## App "ELA Admin" y notificaciones (igual que JB Tech Store)
 
-- El panel se instala como app. El botón «Instalar app» y el manifest (`public/admin.webmanifest`) solo aparecen después de entrar con la contraseña. El manifest de la tienda (`/site.webmanifest`) va solo en la página de inicio (`src/routes/index.tsx`).
+- **Tienda y panel son 2 apps separadas.** La tienda (`public/site.webmanifest`, id y `start_url` = `/`) siempre abre en el inicio. Está en inicio, políticas, términos y en `/admin` mientras no se haya entrado. "ELA Admin" (`public/admin.webmanifest`, `scope: /admin`) solo se ofrece con la sesión abierta, y se quita al salir del panel. Así una clienta que instale desde el menú de Chrome (⋮ → Instalar / Agregar a la pantalla principal) nunca se lleva el panel.
+- Efecto aceptado: desde la app ELA Admin, "Ver la tienda" abre la tienda con la barra de dirección arriba (es otra app).
 - Cada cita o pedido nuevo de la tienda manda una notificación push a los aparatos activados (Admin → Ajustes → App y avisos). Al tocarla abre `/admin?tab=citas` o `/admin?tab=pedidos`.
 - `src/lib/push.ts`: Web Push hecho a mano con WebCrypto (copiado de JB Tech Store). `public/admin-sw.js`: service worker con alcance `/admin`.
 - Tabla `push_subscriptions`: se crea sola con `ensureSchema()` en `store.ts`. Las claves VAPID se crean solas y se guardan en `content` (key `vapidKeys`); nunca van al navegador ni al editor de textos.

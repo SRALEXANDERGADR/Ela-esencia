@@ -1,6 +1,12 @@
 {
-  "name": "ELA",
+  "id": "/",
+  "name": "ELA Esencia",
   "short_name": "ELA",
+  "description": "Servicios de belleza y productos artesanales en Jarabacoa.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "lang": "es",
   "icons": [
     {
       "src": "/android-chrome-192x192.png",
@@ -20,6 +26,5 @@
     }
   ],
   "theme_color": "#f0e4d4",
-  "background_color": "#f0e4d4",
-  "display": "standalone"
+  "background_color": "#f0e4d4"
 }
