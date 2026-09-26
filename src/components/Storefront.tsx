@@ -55,6 +55,21 @@ const prettyDate = (iso: string) => { const [y, m, d] = iso.split('-').map(Numbe
 /** Si una foto no carga (enlace roto), muestra la imagen de respaldo. */
 const onImgError = (event: React.SyntheticEvent<HTMLImageElement>) => { const img = event.currentTarget; if (!img.src.endsWith(PLACEHOLDER)) img.src = PLACEHOLDER }
 
+/** Cantidad escrita a mano (igual que en JB): no deja pasar de lo que hay
+ * en existencia ni bajar de 1. */
+function QtyInput({ value, max, onChange }: { value: number; max: number; onChange: (next: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const limit = Math.max(1, max)
+  return <input className="qty-input" type="number" inputMode="numeric" pattern="[0-9]*" min={1} max={limit} aria-label="Cantidad" value={draft ?? String(value)}
+    onFocus={(event) => event.target.select()}
+    onChange={(event) => {
+      const next = Math.floor(Number(event.target.value))
+      setDraft(Number.isFinite(next) && next > limit ? String(limit) : event.target.value)
+      if (Number.isFinite(next) && next >= 1) onChange(Math.min(next, limit))
+    }}
+    onBlur={() => setDraft(null)} />
+}
+
 /** Logotipo tipográfico de ELA: "Ela" en trazo cursivo + "esencia" en
  * versalitas espaciadas debajo — sin insignia circular. */
 function BrandMark({ className = '' }: { className?: string }) {
@@ -88,14 +103,27 @@ function BlockSprig({ left: Left, right: Right }: { left: React.ComponentType; r
  * los elementos nuevos que se agregan al DOM. */
 function useScrollReveal(deps: unknown[]) {
   useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) entry.target.classList.toggle('in-view', entry.isIntersecting)
-      },
-      { threshold: 0.15, rootMargin: '0px 0px -6% 0px' },
-    )
-    document.querySelectorAll('.reveal').forEach((element) => observer.observe(element))
+    const root = document.documentElement
+    const elements = Array.from(document.querySelectorAll<HTMLElement>('.reveal:not(.in-view)'))
+    if (typeof IntersectionObserver === 'undefined') { elements.forEach((element) => element.classList.add('in-view')); return }
+    // Lo que ya se ve en pantalla se muestra enseguida (sin esconderlo
+    // primero): antes todo empezaba invisible y la página "parpadeaba".
+    const viewport = window.innerHeight
+    for (const element of elements) {
+      const box = element.getBoundingClientRect()
+      if (box.top < viewport && box.bottom > 0) element.classList.add('in-view')
+    }
+    root.classList.add('reveal-on')
+    // Cada sección se anima UNA sola vez. Antes se volvía a esconder al
+    // salir de pantalla y, en el borde, se prendía y apagaba sin parar.
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        entry.target.classList.add('in-view')
+        observer.unobserve(entry.target)
+      }
+    }, { threshold: 0.12 })
+    elements.filter((element) => !element.classList.contains('in-view')).forEach((element) => observer.observe(element))
     return () => observer.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
@@ -158,21 +186,38 @@ export function Storefront({ data }: Props) {
   const cartCount = cart.reduce((sum, line) => sum + line.quantity, 0)
   const subtotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0)
 
+  // Al agregar NO se abre la bolsa (igual que en JB): sale un aviso con
+  // "Ver bolsa" y la clienta sigue viendo productos.
+  const [toast, setToast] = useState<{ title: string; name: string; image: string } | null>(null)
+  const [toastVisible, setToastVisible] = useState(false)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const showToast = (next: { title: string; name: string; image: string }) => {
+    setToast(next); setToastVisible(true)
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToastVisible(false), 3200)
+  }
   const addToCart = (product: Product) => {
+    const inCart = cart.find((line) => line.productId === product.id)?.quantity ?? 0
+    if (inCart >= product.stock) {
+      showToast({ title: `Ya tienes en la bolsa todas las que hay (${product.stock})`, name: product.name, image: product.image })
+      return
+    }
     setCart((current) => {
       const existing = current.find((line) => line.productId === product.id)
       if (existing) return current.map((line) => line.productId === product.id ? { ...line, quantity: Math.min(line.quantity + 1, product.stock) } : line)
       return [...current, { productId: product.id, name: product.name, price: product.price, quantity: 1, image: product.image }]
     })
-    setCartOpen(true)
+    showToast({ title: inCart ? `Agregado a tu bolsa · ya son ${inCart + 1}` : 'Agregado a tu bolsa', name: product.name, image: product.image })
   }
 
-  const changeQuantity = (id: number, delta: number) => setCart((current) => current.flatMap((line) => {
-    if (line.productId !== id) return [line]
-    const product = goods.find((item) => item.id === id)
-    const quantity = Math.min(line.quantity + delta, product?.stock ?? line.quantity)
-    return quantity > 0 ? [{ ...line, quantity }] : []
-  }))
+  const stockOf = (id: number) => goods.find((item) => item.id === id)?.stock ?? 0
+  // La cantidad nunca baja de 1 con el botón "−": para quitar un producto
+  // está el botón de la papelera. Tampoco pasa de lo que hay en existencia.
+  const setQuantity = (id: number, quantity: number) => setCart((current) => current.map((line) => line.productId === id ? { ...line, quantity: Math.max(1, Math.min(Math.floor(quantity) || 1, Math.max(1, stockOf(id)))) } : line))
+  const changeQuantity = (id: number, delta: number) => {
+    const line = cart.find((item) => item.productId === id)
+    if (line) setQuantity(id, line.quantity + delta)
+  }
 
   async function submitOrder(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -343,9 +388,13 @@ export function Storefront({ data }: Props) {
 
     {whatsapp && <a className="wa-float" href={waHref('Hola ELA, quiero información.')} target="_blank" rel="noreferrer" aria-label="Escríbenos por WhatsApp"><MessageCircle /><span>¿Dudas? Escríbenos</span></a>}
 
+    <div className={`cart-toast ${toastVisible ? 'visible' : ''}`} role="status" aria-live="polite">
+      {toast && <><img src={toast.image || PLACEHOLDER} alt="" onError={onImgError} /><div><strong>{toast.title}</strong><span>{toast.name}</span></div><button onClick={() => { setToastVisible(false); setCartOpen(true) }}>Ver bolsa</button></>}
+    </div>
+
     <div className={`overlay ${cartOpen ? 'visible' : ''}`} onClick={() => setCartOpen(false)} />
     <aside className={`cart-drawer ${cartOpen ? 'open' : ''}`}><div className="drawer-head"><div><span className="drawer-kicker">BOLSA · {cartCount} PIEZAS</span><h2>{copy.cartTitle}</h2></div><button className="icon-button" onClick={() => setCartOpen(false)} aria-label="Cerrar bolsa"><X /></button></div>
-      <div className="cart-lines">{cart.map((line) => <div className="cart-line" key={line.productId}><img src={line.image || PLACEHOLDER} alt="" onError={onImgError} /><div><h4>{line.name}</h4><p>{money(line.price)}</p><div className="quantity"><button onClick={() => changeQuantity(line.productId, -1)} aria-label="Quitar uno"><Minus /></button><span>{line.quantity}</span><button onClick={() => changeQuantity(line.productId, 1)} aria-label="Agregar uno"><Plus /></button></div></div><button className="remove" aria-label="Quitar de la bolsa" onClick={() => setCart((current) => current.filter((item) => item.productId !== line.productId))}><Trash2 /></button></div>)}{!cart.length && <div className="empty-cart"><ShoppingBag /><h3>Tu bolsa está esperando</h3><p>Elige algún producto artesanal.</p></div>}</div>
+      <div className="cart-lines">{cart.map((line) => <div className="cart-line" key={line.productId}><img src={line.image || PLACEHOLDER} alt="" onError={onImgError} /><div><h4>{line.name}</h4><p>{money(line.price)}</p><div className="quantity"><button onClick={() => changeQuantity(line.productId, -1)} disabled={line.quantity <= 1} aria-label="Quitar uno"><Minus /></button><QtyInput value={line.quantity} max={stockOf(line.productId)} onChange={(next) => setQuantity(line.productId, next)} /><button onClick={() => changeQuantity(line.productId, 1)} disabled={line.quantity >= stockOf(line.productId)} aria-label="Agregar uno"><Plus /></button></div>{line.quantity >= stockOf(line.productId) && <small className="qty-max">Son todas las que hay</small>}</div><button className="remove" aria-label="Quitar de la bolsa" onClick={() => setCart((current) => current.filter((item) => item.productId !== line.productId))}><Trash2 /></button></div>)}{!cart.length && <div className="empty-cart"><ShoppingBag /><h3>Tu bolsa está esperando</h3><p>Elige algún producto artesanal.</p></div>}</div>
       <div className="cart-summary"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><p>La entrega se coordina después de confirmar el pedido.</p><button className="primary-button full" disabled={!cart.length} onClick={() => { setCartOpen(false); setCheckoutOpen(true) }}>Continuar al checkout <ArrowRight /></button></div>
     </aside>
 

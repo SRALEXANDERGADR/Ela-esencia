@@ -264,8 +264,11 @@ form input,form textarea,form select,.editor-fields input,.editor-fields textare
    (fade + sube) cuando entra en pantalla y vuelve a su estado oculto
    si sale de pantalla (subiendo hacia el navbar u otra vez hacia
    abajo), para que la animación se repita cada vez que se cruza. */
-.reveal{opacity:0;transform:translateY(34px);transition:opacity .9s cubic-bezier(.16,.84,.44,1),transform .9s cubic-bezier(.16,.84,.44,1)}
-.reveal.in-view{opacity:1;transform:none}
+/* Solo se esconde lo que está más abajo de la pantalla, y solo cuando ya
+   cargó el código (clase reveal-on): sin eso, la página se veía en blanco
+   y luego aparecía de golpe. */
+.reveal{transition:opacity .8s cubic-bezier(.16,.84,.44,1),transform .8s cubic-bezier(.16,.84,.44,1)}
+.reveal-on .reveal:not(.in-view){opacity:0;transform:translateY(24px)}
 .reveal.in-view.delay-1{transition-delay:.12s}
 .reveal.in-view.delay-2{transition-delay:.24s}
 .reveal.in-view.delay-3{transition-delay:.36s}
@@ -841,3 +844,17 @@ img{max-width:100%}
 .price-was{display:block;font:400 13px var(--font-body);color:var(--muted);text-decoration:line-through}
 @media(max-width:620px){.service-info .product-action strong{font-size:19px}.product-action strong{font-size:22px}}
 .product-modal .invoice-summary{margin:0 0 18px;line-height:1.5}
+
+/* ═══ Bolsa como JB: aviso al agregar y cantidad mínima 1 ═══ */
+.cart-toast{position:fixed;left:50%;bottom:18px;z-index:70;display:flex;align-items:center;gap:12px;width:min(440px,calc(100vw - 24px));background:var(--ink);color:white;padding:10px 10px 10px 10px;box-shadow:0 18px 40px -12px rgba(20,16,10,.55);transform:translate(-50%,140%);opacity:0;transition:transform .4s cubic-bezier(.16,.84,.44,1),opacity .3s;pointer-events:none}
+.cart-toast.visible{transform:translate(-50%,0);opacity:1;pointer-events:auto}
+.cart-toast img{width:46px;height:46px;object-fit:cover;flex:none}
+.cart-toast div{flex:1;min-width:0}
+.cart-toast strong{display:block;font-size:13px}
+.cart-toast span{display:block;font-size:12px;color:#d8c9b2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cart-toast button{flex:none;border:0;background:var(--gold);color:var(--ink);font-weight:700;font-size:13px;padding:10px 14px;cursor:pointer}
+@media(max-width:620px){.cart-toast{bottom:84px}}
+.quantity button:disabled{opacity:.3;cursor:not-allowed}
+.qty-input{width:38px;border:0;background:transparent;text-align:center;font:11px var(--font-mono);padding:4px 0;-moz-appearance:textfield}
+.qty-input::-webkit-outer-spin-button,.qty-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.qty-max{display:block;margin-top:6px;font-size:11px;color:var(--gold-dark)}

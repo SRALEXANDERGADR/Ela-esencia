@@ -78,3 +78,9 @@ ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un 
 - **Gastos** (tabla `expenses`): 'negocio' o 'personal'.
 - **Finanzas** (en `AdminPanel.tsx`): cuentan pedidos y citas "Pagado" no cancelados (las citas no tienen costo). Mismas fórmulas que JB: Dinero del negocio = capital inicial − compras con dinero del negocio + (costo de lo vendido − recuperado de reinversión) − gastos del negocio; Dinero para reinvertir = % de la ganancia del negocio − compras con ese dinero + lo recuperado; Puedes retirar = el resto de la ganancia + ganancia propia de la reinversión − gastos personales. `capitalInicial` y `reinvestPercent` están en `content` (privados).
 - El crédito "GADR Net" del pie usa el mismo estilo oficial que JB (letra recta, "Net" en #9FAD90, punto #B2603C).
+
+## Bolsa, animaciones e íconos (septiembre 2026)
+
+- **Bolsa como JB:** al agregar NO se abre la bolsa; sale un aviso con "Ver bolsa". La cantidad nunca baja de 1 con "−" (para quitar está la papelera) ni pasa de la existencia; se puede escribir a mano (`QtyInput`).
+- **Animaciones al bajar:** lo que ya está en pantalla se muestra enseguida y cada sección se anima una sola vez (`useScrollReveal` + clase `reveal-on` en `<html>`). Antes todo empezaba invisible y las secciones del borde se prendían y apagaban (parpadeo).
+- **Íconos de la tienda** (`android-chrome-*`, `apple-touch-icon`): fondo crema #f0e4d4 completo con "Ela" centrado, sin la mancha recortada; en el manifest llevan `?v=2` para que los teléfonos los actualicen.
