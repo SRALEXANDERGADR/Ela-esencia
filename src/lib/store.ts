@@ -2,10 +2,12 @@ import { createServerFn } from '@tanstack/react-start'
 import { env } from 'cloudflare:workers'
 import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { appointments, content, customers, imageTrash, invoices, orders, payments, products } from '../../db/schema'
+import { appointments, content, customers, imageTrash, invoices, orders, payments, products, pushSubscriptions } from '../../db/schema'
 import { createSession, clearSession, verifyPassword, verifySession } from './auth'
 import { sendAppointmentNotificationEmail, sendOrderNotificationEmail } from './email'
 import { deleteImageFile, pathFromDownloadUrl } from './github'
+import { generateVapidKeys, sendPush } from './push'
+import type { PushMessage, VapidKeys } from './push'
 
 // Días que un elemento permanece en papelera (productos, clientes, pedidos,
 // citas e imágenes) antes de eliminarse definitivamente. Ver sección 8 del
@@ -83,6 +85,27 @@ async function ensureSeeded() {
   if (Number(existing[0]?.count ?? 0) === 0) await db.insert(products).values(seedProducts as any)
 }
 
+// ───────────────────────────────────────────────────────────────────────
+// ESQUEMA — las tablas nuevas se crean solas la primera vez que arranca el
+// Worker (no hace falta correr migraciones a mano en Neon). Si ya existen,
+// solo se hace una consulta rápida (una vez por instancia).
+// ───────────────────────────────────────────────────────────────────────
+let schemaReady: Promise<void> | null = null
+function ensureSchema(): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = (async () => {
+      const result = await db.execute(sql`select count(*) as n from information_schema.tables where table_schema = current_schema() and table_name = 'push_subscriptions'`)
+      const rows = ((result as unknown as { rows?: Array<{ n: number | string }> }).rows ?? (result as unknown as Array<{ n: number | string }>)) || []
+      if (Number(rows[0]?.n ?? 0) >= 1) return
+      await db.execute(sql`CREATE TABLE IF NOT EXISTS "push_subscriptions" ("id" serial PRIMARY KEY, "endpoint" text NOT NULL UNIQUE, "p256dh" text NOT NULL, "auth" text NOT NULL, "label" text NOT NULL DEFAULT '', "created_at" timestamp NOT NULL DEFAULT now())`)
+    })().catch((error) => {
+      schemaReady = null // se reintenta en la próxima petición
+      throw error
+    })
+  }
+  return schemaReady
+}
+
 async function requireAdmin() {
   const ok = await verifySession()
   if (!ok) throw new Error('Debes iniciar sesión para continuar.')
@@ -99,7 +122,7 @@ const clean = (value: unknown, max = 300) => String(value ?? '').trim().slice(0,
 
 // Claves del contenido que son configuración privada y no deben llegar
 // a la tienda pública (cualquiera podría leerlas en el navegador).
-const PRIVATE_CONTENT_KEYS = ['notificationEmail']
+const PRIVATE_CONTENT_KEYS = ['notificationEmail', 'vapidKeys']
 
 // Devuelve (o vuelve a sacar) las unidades de un pedido al inventario.
 // Solo aplica a artículos de tipo 'producto'.
@@ -286,6 +309,19 @@ export const createOrder = createServerFn({ method: 'POST' })
       await sendOrderNotificationEmail(env, notificationRow.value, { orderNumber, createdAt, customerName: data.name, email: data.email, phone: data.phone, address: data.address, total, items: calculated })
     }
 
+    // Aviso al teléfono (app del panel). Si falla, el pedido ya quedó
+    // guardado igual: nunca se le muestra error a la clienta.
+    try {
+      const units = calculated.reduce((sum, item) => sum + item.quantity, 0)
+      const names = calculated.map((item) => `${item.quantity}× ${item.name}`).join(', ')
+      await notifyAdmins({
+        title: `🛍️ Nuevo pedido · ${formatMoney(total)}`,
+        body: `${data.name} pidió ${units} ${units === 1 ? 'artículo' : 'artículos'}: ${names}`.slice(0, 220),
+        url: '/admin?tab=pedidos',
+        tag: orderNumber,
+      })
+    } catch { /* sin aviso, pero el pedido está bien */ }
+
     return { orderNumber, total, orderId: order.id }
   })
 
@@ -318,6 +354,15 @@ export const createAppointment = createServerFn({ method: 'POST' })
     if (notificationRow?.value) {
       await sendAppointmentNotificationEmail(env, notificationRow.value, { appointmentNumber, createdAt, customerName: data.name, phone: data.phone, email: data.email, serviceName: service.name, price: service.price, date: data.date, time: data.time, notes: data.notes })
     }
+
+    try {
+      await notifyAdmins({
+        title: `📅 Nueva cita · ${service.name}`,
+        body: `${data.name} agendó para el ${prettyDateEs(data.date)} a las ${prettyTimeEs(data.time)}.`.slice(0, 220),
+        url: '/admin?tab=citas',
+        tag: appointmentNumber,
+      })
+    } catch { /* sin aviso, pero la cita está bien */ }
 
     return { appointmentNumber, appointmentId: appointment.id }
   })
@@ -360,7 +405,7 @@ export const getAdminData = createServerFn({ method: 'GET' }).handler(async () =
     customers: customerRows,
     invoices: invoiceRows,
     payments: paymentRows,
-    content: Object.fromEntries(contentRows.map((item) => [item.key, item.value])),
+    content: Object.fromEntries(contentRows.filter((item) => item.key !== 'vapidKeys').map((item) => [item.key, item.value])),
     trash: {
       products: withDaysLeft(trashedProducts),
       orders: withDaysLeft(trashedOrders),
@@ -575,7 +620,7 @@ export const cancelInvoice = createServerFn({ method: 'POST' })
 // ───────────────────────────────────────────────────────────────────────
 export const saveContent = createServerFn({ method: 'POST' }).inputValidator((data: Record<string, string>) => data).handler(async ({ data }) => {
   await requireAdmin()
-  for (const [key, value] of Object.entries(data)) await db.insert(content).values({ key, value }).onConflictDoUpdate({ target: content.key, set: { value } })
+  for (const [key, value] of Object.entries(data)) if (key !== 'vapidKeys') await db.insert(content).values({ key, value }).onConflictDoUpdate({ target: content.key, set: { value } })
   return true
 })
 
@@ -613,4 +658,104 @@ export const purgeCustomer = createServerFn({ method: 'POST' }).inputValidator((
   await requireAdmin()
   await db.delete(customers).where(eq(customers.id, data))
   return true
+})
+
+// ───────────────────────────────────────────────────────────────────────
+// NOTIFICACIONES AL TELÉFONO (app "ELA Admin") — ver src/lib/push.ts.
+// Igual que en JB Tech Store: Web Push hecho a mano con WebCrypto.
+// ───────────────────────────────────────────────────────────────────────
+const PUSH_SUBJECT = 'https://elaesencia.gadrnet.workers.dev'
+
+function formatMoney(cents: number) {
+  return new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP', maximumFractionDigits: 0 }).format(cents / 100)
+}
+
+function prettyDateEs(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!y || !m || !d) return iso
+  return new Intl.DateTimeFormat('es-DO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, d)))
+}
+
+function prettyTimeEs(time: string) {
+  const [h, min] = time.split(':').map(Number)
+  if (Number.isNaN(h)) return time
+  return `${((h + 11) % 12) + 1}:${String(min || 0).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}`
+}
+
+/** Claves VAPID: se crean solas la primera vez y se guardan en la tabla de
+ * contenido (key `vapidKeys`). Nunca se mandan al navegador. */
+async function getVapidKeys(): Promise<VapidKeys> {
+  const read = async () => {
+    const [row] = await db.select().from(content).where(eq(content.key, 'vapidKeys')).limit(1)
+    if (!row?.value) return null
+    try { return JSON.parse(row.value) as VapidKeys } catch { return null }
+  }
+  const existing = await read()
+  if (existing?.publicKey && existing.privateJwk) return existing
+  const fresh = await generateVapidKeys()
+  await db.insert(content).values({ key: 'vapidKeys', value: JSON.stringify(fresh) }).onConflictDoNothing()
+  return (await read()) ?? fresh
+}
+
+async function sendToSubscriptions(rows: Array<{ id: number; endpoint: string; p256dh: string; auth: string }>, message: PushMessage) {
+  if (!rows.length) return { sent: 0, failed: 0, problem: '' }
+  const keys = await getVapidKeys()
+  const results = await Promise.all(rows.map((row) => sendPush(row, message, keys, PUSH_SUBJECT)))
+  // Aparatos que ya no existen (app desinstalada o permiso quitado): fuera.
+  const gone = rows.filter((_, index) => results[index].result === 'gone').map((row) => row.id)
+  if (gone.length) await db.delete(pushSubscriptions).where(inArray(pushSubscriptions.id, gone))
+  const firstProblem = results.find((item) => item.result !== 'ok')
+  return {
+    sent: results.filter((item) => item.result === 'ok').length,
+    failed: results.filter((item) => item.result !== 'ok').length,
+    problem: firstProblem ? `${firstProblem.result === 'gone' ? 'el aparato ya no acepta avisos' : 'error'} (código ${firstProblem.status || 'sin respuesta'}${firstProblem.detail ? `: ${firstProblem.detail}` : ''})` : '',
+  }
+}
+
+async function notifyAdmins(message: PushMessage) {
+  await ensureSchema()
+  const rows = await db.select().from(pushSubscriptions)
+  return sendToSubscriptions(rows, message)
+}
+
+/** Lo que la app necesita para activar las notificaciones en un aparato. */
+export const getPushSetup = createServerFn({ method: 'GET' }).handler(async () => {
+  await requireAdmin()
+  await ensureSchema()
+  const keys = await getVapidKeys()
+  const rows = await db.select({ id: pushSubscriptions.id, endpoint: pushSubscriptions.endpoint, label: pushSubscriptions.label, createdAt: pushSubscriptions.createdAt }).from(pushSubscriptions).orderBy(desc(pushSubscriptions.createdAt))
+  return { publicKey: keys.publicKey, devices: rows.map((row) => ({ id: row.id, endpoint: row.endpoint, label: row.label, createdAt: row.createdAt })) }
+})
+
+export const savePushSubscription = createServerFn({ method: 'POST' })
+  .inputValidator((data: { endpoint: string; p256dh: string; auth: string; label: string }) => data)
+  .handler(async ({ data }) => {
+    await requireAdmin()
+    await ensureSchema()
+    const endpoint = String(data.endpoint || '')
+    if (!/^https:\/\//.test(endpoint) || endpoint.length > 1000) throw new Error('La suscripción del navegador no es válida.')
+    if (!data.p256dh || !data.auth) throw new Error('Faltan las claves de la suscripción.')
+    const values = { endpoint, p256dh: String(data.p256dh).slice(0, 200), auth: String(data.auth).slice(0, 100), label: String(data.label || '').slice(0, 80) }
+    await db.insert(pushSubscriptions).values(values).onConflictDoUpdate({ target: pushSubscriptions.endpoint, set: { p256dh: values.p256dh, auth: values.auth, label: values.label } })
+    return true
+  })
+
+export const removePushSubscription = createServerFn({ method: 'POST' }).inputValidator((endpoint: string) => endpoint).handler(async ({ data }) => {
+  await requireAdmin()
+  await ensureSchema()
+  await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, String(data || '')))
+  return true
+})
+
+/** Manda un aviso de prueba (a este aparato o, sin endpoint, a todos). */
+export const sendTestPush = createServerFn({ method: 'POST' }).inputValidator((endpoint: string) => endpoint).handler(async ({ data }) => {
+  await requireAdmin()
+  await ensureSchema()
+  const rows = data
+    ? await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, String(data)))
+    : await db.select().from(pushSubscriptions)
+  if (!rows.length) throw new Error('Este aparato todavía no tiene las notificaciones activadas.')
+  const result = await sendToSubscriptions(rows, { title: '🔔 Notificaciones activadas', body: 'Así te va a llegar cada cita y cada pedido nuevo de la tienda.', url: '/admin', tag: 'prueba' })
+  if (!result.sent) throw new Error(`No se pudo entregar la prueba: ${result.problem}. Toca «Activar notificaciones» otra vez.`)
+  return result
 })

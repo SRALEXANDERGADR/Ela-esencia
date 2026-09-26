@@ -144,3 +144,16 @@ export const content = pgTable('content', {
   key: text('key').primaryKey(),
   value: text('value').notNull().default(''),
 })
+
+// ───────────────────────────────────────────────────────────────────────
+// AVISOS AL TELÉFONO — cada aparato (la app "ELA Admin") que activó las
+// notificaciones. La tabla se crea sola con `ensureSchema()` en store.ts.
+// ───────────────────────────────────────────────────────────────────────
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  id: serial('id').primaryKey(),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  label: text('label').notNull().default(''), // ej. "Android · Chrome"
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+})

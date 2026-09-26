@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { AlertTriangle, ArrowLeft, Ban, Boxes, Calendar, CalendarPlus, CheckCircle2, ChevronRight, Clock, Download, Eye, EyeOff, FileText, Home, ImageOff, ImagePlus, LoaderCircle, LogOut, MapPin, MessageCircle, MoreHorizontal, Package, Pencil, PlusCircle, ReceiptText, RotateCcw, Save, Scissors, Search, Share2, ShoppingBag, Trash, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
-import { cancelInvoice, checkSession, deleteAppointment, deleteCustomer, deleteOrder, deleteProduct, getAdminData, login, logout, purgeAppointment, purgeCustomer, purgeOrder, purgeProduct, registerPayment, restoreAppointment, restoreCustomer, restoreOrder, restoreProduct, saveAppointmentAdmin, saveContent, saveCustomer, saveProduct, updateAppointmentStatus, updateOrderStatus } from '@/lib/store'
+import { AlertTriangle, ArrowLeft, Ban, Bell, BellOff, BellRing, Boxes, Calendar, CalendarPlus, Check, CheckCircle2, ChevronRight, Clock, Download, Eye, EyeOff, FileText, Home, ImageOff, ImagePlus, LoaderCircle, LogOut, MapPin, MessageCircle, MoreHorizontal, Package, Pencil, PlusCircle, ReceiptText, RotateCcw, Save, Scissors, Search, Share2, ShoppingBag, Smartphone, Trash, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { cancelInvoice, checkSession, deleteAppointment, deleteCustomer, deleteOrder, deleteProduct, getAdminData, getPushSetup, login, logout, removePushSubscription, savePushSubscription, sendTestPush, purgeAppointment, purgeCustomer, purgeOrder, purgeProduct, registerPayment, restoreAppointment, restoreCustomer, restoreOrder, restoreProduct, saveAppointmentAdmin, saveContent, saveCustomer, saveProduct, updateAppointmentStatus, updateOrderStatus } from '@/lib/store'
 import type { InvoiceLike, PaymentLike } from '@/lib/invoice'
 import { compressImage } from '@/lib/image'
+import { fromBase64Url } from '@/lib/push'
 
 type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
 type Order = { id: number; orderNumber: string; customerId: number | null; customerName: string; email: string; phone: string; address: string; total: number; status: string; paymentStatus: string; items: Array<{ id: number; name: string; price: number; quantity: number }>; createdAt: string | Date }
@@ -20,7 +21,8 @@ type TrashData = {
   images: TrashImage[]
 }
 type AdminData = { products: Product[]; orders: Order[]; appointments: Appointment[]; customers: Customer[]; invoices: Invoice[]; payments: Payment[]; content: Record<string, string>; trash: TrashData }
-type Tab = 'resumen' | 'citas' | 'pedidos' | 'facturas' | 'catalogo' | 'clientes' | 'contenido' | 'papelera'
+type Tab = 'resumen' | 'citas' | 'pedidos' | 'facturas' | 'catalogo' | 'clientes' | 'contenido' | 'app' | 'papelera'
+const TAB_IDS: Tab[] = ['resumen', 'citas', 'pedidos', 'facturas', 'catalogo', 'clientes', 'contenido', 'app', 'papelera']
 type CustomerDraft = { id?: number; name: string; email: string; phone: string; address: string; notes: string }
 type ProductDraft = { id?: number; kind: string; name: string; category: string; description: string; price: number; stock: number; durationMinutes: number; image: string; featured: boolean; active: boolean }
 type AppointmentDraft = { name: string; phone: string; email: string; serviceId: number; date: string; time: string; notes: string }
@@ -61,6 +63,7 @@ const waLink = (phone: string, text = '') => {
   if (digits.length < 8) return ''
   return `https://wa.me/${digits}${text ? `?text=${encodeURIComponent(text)}` : ''}`
 }
+const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches' }
 const blankProduct = (kind = 'servicio'): ProductDraft => ({ kind, name: '', category: '', description: '', price: 0, stock: 0, durationMinutes: 30, image: '', featured: false, active: true })
 const blankCustomer: CustomerDraft = { name: '', email: '', phone: '', address: '', notes: '' }
 const ORDER_STATUSES = ['Pendiente', 'Preparando', 'Enviado', 'Entregado', 'Cancelado']
@@ -71,9 +74,222 @@ const PAYMENT_STATUSES = ['Pendiente', 'Pagado', 'Reembolsado']
 // cuando de verdad se descarga o comparte una factura.
 const invoiceLib = () => import('@/lib/invoice')
 
+// ───────────────────────────────────────────────────────────────────────
+// APP "ELA Admin" Y NOTIFICACIONES — igual que en JB Tech Store. El panel
+// se instala como app y cada cita o pedido nuevo manda un aviso al
+// teléfono (con el punto en el ícono), aunque la app esté cerrada.
+// ───────────────────────────────────────────────────────────────────────
+type PushState = 'cargando' | 'no-soportado' | 'bloqueado' | 'apagado' | 'activo'
+type PushDevice = { id: number; endpoint: string; label: string; createdAt: string }
+type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> }
+
+function deviceLabel() {
+  const ua = navigator.userAgent
+  const system = /Android/i.test(ua) ? 'Android' : /iPhone|iPad/i.test(ua) ? 'iPhone' : /Windows/i.test(ua) ? 'Windows' : /Mac/i.test(ua) ? 'Mac' : 'Computadora'
+  const browser = /SamsungBrowser/i.test(ua) ? 'Samsung Internet' : /Edg\//i.test(ua) ? 'Edge' : /Firefox/i.test(ua) ? 'Firefox' : /Chrome/i.test(ua) ? 'Chrome' : 'Navegador'
+  return `${system} · ${browser}`
+}
+
+// Chrome avisa "se puede instalar" con el evento beforeinstallprompt. Se
+// guarda aquí (y se evita su cartelito automático) para que la única forma
+// de instalar sea el botón «Instalar app» del panel, ya con la sesión abierta.
+let deferredInstall: InstallPromptEvent | null = null
+const installListeners = new Set<(event: InstallPromptEvent | null) => void>()
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (event) => {
+    if (!window.location.pathname.startsWith('/admin')) return
+    event.preventDefault()
+    deferredInstall = event as InstallPromptEvent
+    installListeners.forEach((listener) => listener(deferredInstall))
+  })
+  window.addEventListener('appinstalled', () => {
+    deferredInstall = null
+    installListeners.forEach((listener) => listener(null))
+  })
+}
+
+/** Pone (o quita) el manifest de la app "ELA Admin". Solo con la sesión abierta. */
+function setAdminManifest(enabled: boolean) {
+  const existing = document.getElementById('admin-manifest')
+  if (enabled && !existing) {
+    const link = document.createElement('link')
+    link.id = 'admin-manifest'
+    link.rel = 'manifest'
+    link.href = '/admin.webmanifest'
+    document.head.appendChild(link)
+  } else if (!enabled && existing) {
+    existing.remove()
+  }
+}
+
+function isInstalledApp() {
+  return typeof window !== 'undefined' && (window.matchMedia?.('(display-mode: standalone)').matches || (navigator as any).standalone === true)
+}
+
+/** Revisa rápido si este aparato ya tiene los avisos activados (para el
+ * recordatorio de Inicio). No pide permisos ni registra nada. */
+async function pushActiveHere() {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return true
+  if (Notification.permission !== 'granted') return false
+  const registration = await navigator.serviceWorker.getRegistration('/admin')
+  return Boolean(await registration?.pushManager.getSubscription())
+}
+
+function AppAndNotifications() {
+  const [state, setState] = useState<PushState>('cargando')
+  const [devices, setDevices] = useState<PushDevice[]>([])
+  const [endpoint, setEndpoint] = useState('')
+  const [working, setWorking] = useState(false)
+  const [message, setMessage] = useState('')
+  const [installEvent, setInstallEvent] = useState<InstallPromptEvent | null>(() => deferredInstall)
+  const [installed, setInstalled] = useState(false)
+
+  async function load() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) { setState('no-soportado'); return }
+    const registration = await navigator.serviceWorker.register('/admin-sw.js', { scope: '/admin' })
+    const setup = await getPushSetup()
+    setDevices(setup.devices as unknown as PushDevice[])
+    const subscription = await registration.pushManager.getSubscription()
+    setEndpoint(subscription?.endpoint ?? '')
+    if (Notification.permission === 'denied') setState('bloqueado')
+    else if (subscription && setup.devices.some((device) => device.endpoint === subscription.endpoint)) setState('activo')
+    else setState('apagado')
+  }
+
+  useEffect(() => {
+    setInstalled(isInstalledApp())
+    load().catch(() => setState('no-soportado'))
+    setInstallEvent(deferredInstall)
+    const listener = (event: InstallPromptEvent | null) => {
+      setInstallEvent(event)
+      if (!event) setInstalled(true)
+    }
+    installListeners.add(listener)
+    return () => { installListeners.delete(listener) }
+  }, [])
+
+  async function act(action: () => Promise<void>) {
+    setWorking(true)
+    setMessage('')
+    try { await action() } catch (caught) { setMessage(caught instanceof Error ? caught.message : 'Algo salió mal. Intenta de nuevo.') } finally { setWorking(false) }
+  }
+
+  const enable = () => act(async () => {
+    const permission = await Notification.requestPermission()
+    if (permission !== 'granted') {
+      setState(permission === 'denied' ? 'bloqueado' : 'apagado')
+      throw new Error('Para recibir los avisos tienes que tocar «Permitir» cuando el teléfono pregunte.')
+    }
+    const registration = await navigator.serviceWorker.register('/admin-sw.js', { scope: '/admin' })
+    await navigator.serviceWorker.ready
+    const setup = await getPushSetup()
+    // Si había una suscripción vieja (ej. de otras claves), se cambia por una nueva.
+    const old = await registration.pushManager.getSubscription()
+    if (old) await old.unsubscribe().catch(() => false)
+    const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromBase64Url(setup.publicKey) })
+    const json = subscription.toJSON()
+    await savePushSubscription({ data: { endpoint: subscription.endpoint, p256dh: json.keys?.p256dh ?? '', auth: json.keys?.auth ?? '', label: deviceLabel() } })
+    try {
+      await sendTestPush({ data: subscription.endpoint })
+    } finally {
+      await load() // la pantalla siempre muestra el estado real, aunque la prueba falle
+    }
+    setMessage('Listo. Te acaba de llegar una notificación de prueba: así te van a llegar las citas y los pedidos.')
+  })
+
+  const disable = () => act(async () => {
+    const registration = await navigator.serviceWorker.getRegistration('/admin')
+    const subscription = await registration?.pushManager.getSubscription()
+    if (subscription) {
+      await removePushSubscription({ data: subscription.endpoint })
+      await subscription.unsubscribe().catch(() => false)
+    }
+    await load()
+    setMessage('Notificaciones apagadas en este aparato.')
+  })
+
+  const test = () => act(async () => {
+    try {
+      await sendTestPush({ data: endpoint })
+    } finally {
+      await load()
+    }
+    setMessage('Prueba enviada. Debe llegarte en unos segundos.')
+  })
+
+  const removeDevice = (device: PushDevice) => act(async () => {
+    if (!window.confirm(`¿Dejar de mandar avisos a «${device.label || 'ese aparato'}»?`)) return
+    await removePushSubscription({ data: device.endpoint })
+    await load()
+  })
+
+  const install = () => act(async () => {
+    if (!installEvent) return
+    await installEvent.prompt()
+    const choice = await installEvent.userChoice
+    if (choice.outcome === 'accepted') setInstalled(true)
+    deferredInstall = null
+    setInstallEvent(null)
+  })
+
+  return (
+    <div className="app-card">
+      <div className="app-card-head">
+        <img src="/admin-192.png" alt="" />
+        <div><strong>App "ELA Admin" y avisos</strong><span>Instala el panel como app en tu teléfono y te llega una notificación (con el punto en el ícono) cada vez que alguien agenda una cita o hace un pedido, aunque la app esté cerrada.</span></div>
+      </div>
+
+      <div className="app-step">
+        <b>1</b>
+        <div>
+          <strong>Instalar la app</strong>
+          {installed
+            ? <span className="app-ok"><Check size={14} />Ya la estás usando como app.</span>
+            : installEvent
+            ? <button type="button" className="admin-action" disabled={working} onClick={install}><Smartphone size={16} />Instalar app</button>
+            : <span>Preparando el botón de instalar… Si en unos segundos no aparece, en Chrome toca el menú <b>⋮</b> → <b>«Instalar app»</b> o <b>«Agregar a la pantalla principal»</b>. En iPhone (Safari): botón <b>Compartir</b> → <b>«Agregar a inicio»</b>.</span>}
+        </div>
+      </div>
+
+      <div className="app-step">
+        <b>2</b>
+        <div>
+          <strong>Avisos en este aparato</strong>
+          {state === 'cargando' && <span>Revisando…</span>}
+          {state === 'no-soportado' && <span>Este navegador no puede recibir notificaciones. Abre el panel en Chrome (Android o computadora) o en Edge. En iPhone, primero instala la app y ábrela desde el ícono.</span>}
+          {state === 'bloqueado' && <span className="app-warn">Las notificaciones están bloqueadas para esta página. Toca el candado junto a la dirección (o Ajustes del teléfono → Apps → ELA Admin → Notificaciones) y ponlas en «Permitir»; luego vuelve aquí.</span>}
+          {state === 'apagado' && <button type="button" className="admin-action" disabled={working} onClick={enable}><Bell size={16} />{working ? 'Activando…' : 'Activar notificaciones'}</button>}
+          {state === 'activo' && <div className="app-actions">
+            <span className="app-ok"><Check size={14} />Activadas en este aparato.</span>
+            <button type="button" className="admin-action ghost" disabled={working} onClick={test}><Bell size={15} />Probar</button>
+            <button type="button" className="admin-action ghost" disabled={working} onClick={disable}><BellOff size={15} />Apagar</button>
+          </div>}
+        </div>
+      </div>
+
+      {message && <p className="app-message">{message}</p>}
+
+      {devices.length > 0 && (
+        <div className="app-devices">
+          <span>Las citas y pedidos avisan a {devices.length === 1 ? '1 aparato' : `${devices.length} aparatos`}:</span>
+          {devices.map((device) => (
+            <div key={device.id} className="app-device">
+              <Smartphone size={15} />
+              <span>{device.label || 'Aparato'}{device.endpoint === endpoint ? ' (este)' : ''} · desde {shortDate(device.createdAt)}</span>
+              <button type="button" aria-label="Quitar" disabled={working} onClick={() => removeDevice(device)}><X size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function AdminPanel() {
   const initialized = useRef(false)
+  const authenticatedRef = useRef(false)
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
+  authenticatedRef.current = authenticated === true
   const [data, setData] = useState<AdminData | null>(null)
   const [tab, setTab] = useState<Tab>('resumen')
   const [moreOpen, setMoreOpen] = useState(false)
@@ -93,6 +309,7 @@ export function AdminPanel() {
   const [viewingAppointment, setViewingAppointment] = useState<Appointment | null>(null)
   const [contentDraft, setContentDraft] = useState<Record<string, string>>({})
   const [contentDirty, setContentDirty] = useState(false)
+  const [pushReady, setPushReady] = useState(true)
 
   function notify(text: string, kind: Toast['kind'] = 'ok') {
     const id = Date.now() + Math.random()
@@ -139,6 +356,29 @@ export function AdminPanel() {
     initializeAuth().catch(() => setAuthenticated(false))
   }, [])
 
+  // Solo con la sesión abierta se ofrece instalar el panel como app, y se
+  // revisa si este aparato ya recibe los avisos (para recordarlo en Inicio).
+  useEffect(() => {
+    setAdminManifest(authenticated === true)
+    if (authenticated) pushActiveHere().then(setPushReady).catch(() => setPushReady(true))
+  }, [authenticated, tab])
+
+  // La notificación abre /admin?tab=citas o ?tab=pedidos. Al abrir o volver
+  // a la app se quitan el punto del ícono y las notificaciones ya vistas.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('tab') as Tab | null
+    if (wanted && TAB_IDS.includes(wanted)) setTab(wanted)
+    const clearBadge = () => {
+      if (document.visibilityState !== 'visible') return
+      try { (navigator as any).clearAppBadge?.()?.catch?.(() => {}) } catch { /* sin soporte */ }
+      navigator.serviceWorker?.getRegistration('/admin').then((registration) => registration?.getNotifications().then((list) => list.forEach((item) => item.close()))).catch(() => {})
+      if (authenticatedRef.current) refresh().catch(() => {})
+    }
+    clearBadge()
+    document.addEventListener('visibilitychange', clearBadge)
+    return () => document.removeEventListener('visibilitychange', clearBadge)
+  }, [])
+
   // Cerrar ventanas con la tecla Escape.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -151,7 +391,15 @@ export function AdminPanel() {
 
   function goTo(next: Tab, nextFilter = '') {
     setTab(next); setQuery(''); setFilter(nextFilter); setMoreOpen(false); setError('')
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0 })
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', next === 'resumen' ? '/admin' : `/admin?tab=${next}`)
+      window.scrollTo({ top: 0 })
+    }
+  }
+
+  async function handleLogout() {
+    await logout().catch(() => {})
+    setAuthenticated(false); setData(null); setMoreOpen(false)
   }
 
   async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
@@ -326,16 +574,18 @@ export function AdminPanel() {
   const trashCount = data.trash.products.length + data.trash.orders.length + data.trash.appointments.length + data.trash.customers.length
   const newBooking = (): AppointmentDraft => ({ name: '', phone: '', email: '', serviceId: services[0]?.id ?? 0, date: today, time: '10:00', notes: '' })
 
-  const tabs: { id: Tab; label: string; hint: string; icon: React.ReactNode; badge?: number }[] = [
-    { id: 'resumen', label: 'Inicio', hint: 'Lo más importante de hoy', icon: <Home /> },
-    { id: 'citas', label: 'Citas', hint: 'Agenda de servicios', icon: <Calendar />, badge: toConfirm },
-    { id: 'pedidos', label: 'Pedidos', hint: 'Compras de productos', icon: <ShoppingBag />, badge: openOrders.length },
-    { id: 'facturas', label: 'Cobros', hint: 'Facturas, abonos y saldos', icon: <Wallet /> },
-    { id: 'catalogo', label: 'Catálogo', hint: 'Servicios y productos', icon: <Boxes /> },
-    { id: 'clientes', label: 'Clientes', hint: 'Tus clientas y su historial', icon: <Users /> },
-    { id: 'contenido', label: 'Textos de la web', hint: 'Lo que se lee en la tienda', icon: <FileText /> },
-    { id: 'papelera', label: 'Papelera', hint: 'Lo borrado en los últimos 30 días', icon: <Trash2 />, badge: trashCount },
+  const tabs: { id: Tab; label: string; hint: string; group: string; icon: React.ReactNode; badge?: number }[] = [
+    { id: 'resumen', label: 'Inicio', hint: 'Lo más importante de hoy', group: 'Día a día', icon: <Home /> },
+    { id: 'citas', label: 'Citas', hint: 'Agenda de servicios', group: 'Día a día', icon: <Calendar />, badge: toConfirm },
+    { id: 'pedidos', label: 'Pedidos', hint: 'Compras de productos', group: 'Día a día', icon: <ShoppingBag />, badge: openOrders.length },
+    { id: 'facturas', label: 'Cobros', hint: 'Facturas, abonos y saldos', group: 'Día a día', icon: <Wallet /> },
+    { id: 'catalogo', label: 'Catálogo', hint: 'Servicios y productos', group: 'Tu tienda', icon: <Boxes /> },
+    { id: 'clientes', label: 'Clientes', hint: 'Tus clientas y su historial', group: 'Tu tienda', icon: <Users /> },
+    { id: 'contenido', label: 'Textos de la web', hint: 'Lo que se lee en la tienda', group: 'Tu tienda', icon: <FileText /> },
+    { id: 'app', label: 'App y avisos', hint: 'Instalar la app y recibir notificaciones', group: 'Ajustes', icon: <BellRing /> },
+    { id: 'papelera', label: 'Papelera', hint: 'Lo borrado en los últimos 30 días', group: 'Ajustes', icon: <Trash2 />, badge: trashCount },
   ]
+  const groups = Array.from(new Set(tabs.map((item) => item.group)))
   const mobileMain: Tab[] = ['resumen', 'citas', 'pedidos', 'facturas']
   const current = tabs.find((item) => item.id === tab)!
 
@@ -345,9 +595,9 @@ export function AdminPanel() {
 
   return <div className="admin-shell">
     <aside className="admin-sidebar"><Link to="/" className="admin-brand"><span>E</span><div>ELA<small>Administración</small></div></Link>
-      <nav>{tabs.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => goTo(item.id)} title={item.label}>{item.icon}<span className="nav-label">{item.label}</span>{!!item.badge && <b className="nav-badge">{item.badge}</b>}</button>)}</nav>
+      <nav>{groups.map((group) => <div key={group} className="nav-group"><small className="nav-group-title">{group}</small>{tabs.filter((item) => item.group === group).map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => goTo(item.id)} title={item.label}>{item.icon}<span className="nav-label">{item.label}</span>{!!item.badge && <b className="nav-badge">{item.badge}</b>}</button>)}</div>)}</nav>
       <Link to="/" className="logout sidebar-store"><Eye />Ver la tienda</Link>
-      <button className="logout" onClick={async () => { await logout(); setAuthenticated(false) }}><LogOut />Cerrar sesión</button>
+      <button className="logout" onClick={handleLogout}><LogOut />Cerrar sesión</button>
     </aside>
 
     {/* Menú inferior en el teléfono: las 4 secciones del día a día + "Más". */}
@@ -357,26 +607,35 @@ export function AdminPanel() {
     </nav>
     {moreOpen && <div className="more-sheet-wrap" onClick={() => setMoreOpen(false)}><div className="more-sheet" onClick={(event) => event.stopPropagation()}>
       <div className="more-sheet-head"><strong>Más opciones</strong><button className="icon-button icon-button-sm" onClick={() => setMoreOpen(false)} aria-label="Cerrar"><X size={16} /></button></div>
-      {tabs.filter((item) => !mobileMain.includes(item.id)).map((item) => <button key={item.id} onClick={() => goTo(item.id)}>{item.icon}<div><strong>{item.label}</strong><small>{item.hint}</small></div>{!!item.badge && <b className="nav-badge">{item.badge}</b>}<ChevronRight size={16} /></button>)}
+      {groups.filter((group) => group !== 'Día a día').map((group) => <div key={group} className="more-group"><small className="more-group-title">{group}</small>{tabs.filter((item) => item.group === group).map((item) => <button key={item.id} onClick={() => goTo(item.id)}>{item.icon}<div><strong>{item.label}</strong><small>{item.hint}</small></div>{!!item.badge && <b className="nav-badge">{item.badge}</b>}<ChevronRight size={16} /></button>)}</div>)}
+      <small className="more-group-title">Salir</small>
       <Link to="/"><Eye /><div><strong>Ver la tienda</strong><small>Como la ven tus clientas</small></div><ChevronRight size={16} /></Link>
-      <button onClick={async () => { await logout(); setAuthenticated(false) }}><LogOut /><div><strong>Cerrar sesión</strong><small>Salir del panel</small></div></button>
+      <button onClick={handleLogout}><LogOut /><div><strong>Cerrar sesión</strong><small>Salir del panel</small></div></button>
     </div></div>}
 
     <main className="admin-main">
       <header><div><span>{current.hint}</span><h1>{current.label}</h1></div><Link to="/" className="header-store">Ver tienda <ArrowLeft /></Link></header>
 
       {tab === 'resumen' && <div className="dashboard">
-        <div className="quick-actions">
-          <button onClick={() => setBookingDraft(newBooking())} disabled={!services.length}><CalendarPlus />Nueva cita</button>
-          <button onClick={() => { goTo('catalogo'); setCatalogKind('producto'); setEditing(blankProduct('producto')) }}><PlusCircle />Nuevo producto</button>
-          <button onClick={() => { goTo('catalogo'); setCatalogKind('servicio'); setEditing(blankProduct('servicio')) }}><Scissors />Nuevo servicio</button>
-          <button onClick={() => { goTo('clientes'); setEditingCustomer(blankCustomer) }}><UserPlus />Nuevo cliente</button>
-        </div>
+        <p className="greeting">{greeting()} · <span>{new Intl.DateTimeFormat('es-DO', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}</span></p>
         <div className="metric-grid">
           <button onClick={() => goTo('citas', 'hoy')}><span>Citas de hoy</span><strong>{todayAppointments.length}</strong><small>{toConfirm ? `${toConfirm} por confirmar` : 'Todo confirmado'}</small></button>
           <button onClick={() => goTo('pedidos', 'abiertos')}><span>Pedidos por atender</span><strong>{openOrders.length}</strong><small>Pendientes o preparando</small></button>
           <button onClick={() => goTo('facturas', 'porcobrar')}><span>Por cobrar</span><strong>{money(pendingBalance)}</strong><small>Saldos pendientes</small></button>
           <button onClick={() => goTo('facturas', 'pagadas')}><span>Cobrado este mes</span><strong>{money(collectedMonth)}</strong><small>Suma de abonos</small></button>
+        </div>
+
+        {!pushReady && <button className="push-reminder" onClick={() => goTo('app')}><BellRing /><div><strong>Activa los avisos en este teléfono</strong><small>Te llega una notificación con cada cita y pedido nuevo, aunque la app esté cerrada.</small></div><ChevronRight size={18} /></button>}
+
+        {/* Menú en cuadritos (en el teléfono): todas las secciones a un toque. */}
+        <div className="tile-menu">{tabs.filter((item) => item.id !== 'resumen').map((item) => <button key={item.id} onClick={() => goTo(item.id)}>{item.icon}<span>{item.label}</span>{!!item.badge && <b className="nav-badge">{item.badge}</b>}</button>)}</div>
+
+        <h3 className="dash-subtitle">Acciones rápidas</h3>
+        <div className="quick-actions">
+          <button onClick={() => setBookingDraft(newBooking())} disabled={!services.length}><CalendarPlus />Nueva cita</button>
+          <button onClick={() => { goTo('catalogo'); setCatalogKind('producto'); setEditing(blankProduct('producto')) }}><PlusCircle />Nuevo producto</button>
+          <button onClick={() => { goTo('catalogo'); setCatalogKind('servicio'); setEditing(blankProduct('servicio')) }}><Scissors />Nuevo servicio</button>
+          <button onClick={() => { goTo('clientes'); setEditingCustomer(blankCustomer) }}><UserPlus />Nuevo cliente</button>
         </div>
 
         {lowStockProducts.length > 0 && <div className="admin-notice"><AlertTriangle size={16} /><div><strong>Quedan pocas unidades:</strong> {lowStockProducts.map((product) => `${product.name} (${product.stock})`).join(', ')}.</div><button onClick={() => { goTo('catalogo'); setCatalogKind('producto') }}>Revisar</button></div>}
@@ -467,6 +726,8 @@ export function AdminPanel() {
       </section>}
 
       {tab === 'contenido' && <ContentEditor values={contentDraft} dirty={contentDirty} onChange={(next) => { setContentDraft(next); setContentDirty(true) }} onUpload={(file) => uploadImage(file, 'hero')} onSave={saveSiteContent} busy={busy} uploading={uploading} />}
+
+      {tab === 'app' && <div className="dashboard"><AppAndNotifications /><div className="admin-card app-help"><h3>¿Cómo funciona?</h3><ol><li>Toca <b>Instalar app</b>: queda un ícono "ELA Admin" en tu teléfono, como cualquier otra app.</li><li>Toca <b>Activar notificaciones</b> y luego <b>Permitir</b>.</li><li>Cada vez que una clienta agende una cita o haga un pedido en la web, te suena el teléfono. Al tocar el aviso se abre la app en Citas o Pedidos.</li></ol><p>Si otra persona también atiende la tienda, que entre al panel desde su teléfono y haga lo mismo.</p></div></div>}
 
       {tab === 'papelera' && <TrashPanel trash={data.trash} onRestore={restoreItem} onPurge={purgeItem} />}
     </main>
