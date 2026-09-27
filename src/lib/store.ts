@@ -5,7 +5,7 @@ import { db } from '../../db'
 import { appointments, content, customers, expenses, imageTrash, invoices, orders, payments, products, purchases, pushSubscriptions } from '../../db/schema'
 import { createSession, clearSession, verifyPassword, verifySession } from './auth'
 import { sendAppointmentNotificationEmail, sendOrderNotificationEmail } from './email'
-import { deleteImage, imagePathFromUrl, R2_URL_PREFIX } from './fotos'
+import { deleteImage, imagePathFromUrl } from './fotos'
 import { formatMoney } from './money'
 import { generateVapidKeys, sendPush } from './push'
 import type { PushMessage, VapidKeys } from './push'
@@ -309,45 +309,6 @@ async function trashImage(url: string, reason: string) {
   await db.insert(imageTrash).values({ path, url, reason })
 }
 
-// Migración de una sola vez (se puede quitar cuando ya no quede nada en
-// GitHub): pasa a R2 las fotos de productos y servicios que todavía están
-// en GitHub, actualiza la base y borra el archivo viejo de GitHub. Corre
-// sola con la limpieza al abrir el panel; si no queda nada, no hace nada.
-// Como mucho 8 fotos por vez: Cloudflare limita las conexiones salientes
-// de un solo pedido.
-async function migrateGithubImagesToR2() {
-  if (!env.FOTOS) return
-  const rows = await db.select().from(products)
-  const isPending = (url: string) => {
-    const path = url ? imagePathFromUrl(env, url) : null
-    return Boolean(path) && !path!.startsWith('r2/')
-  }
-  const pending = [...new Set(rows.flatMap((product) => [product.image, ...(product.images ?? [])]).filter(isPending))].slice(0, 8)
-  if (!pending.length) return
-
-  const urlToNew = new Map<string, string>()
-  for (const url of pending) {
-    try {
-      const response = await fetch(url)
-      if (!response.ok) continue
-      const key = imagePathFromUrl(env, url)!.split('/').pop()!
-      await env.FOTOS.put(key, await response.arrayBuffer(), { httpMetadata: { contentType: response.headers.get('content-type') || 'image/jpeg', cacheControl: 'public, max-age=31536000, immutable' } })
-      urlToNew.set(url, R2_URL_PREFIX + key)
-    } catch { /* se reintenta la próxima vez */ }
-  }
-
-  for (const product of rows) {
-    const image = urlToNew.get(product.image) ?? product.image
-    const images = (product.images ?? []).map((url) => urlToNew.get(url) ?? url)
-    if (image === product.image && images.every((url, i) => url === product.images[i])) continue
-    await db.update(products).set({ image, images }).where(eq(products.id, product.id))
-  }
-
-  for (const oldUrl of urlToNew.keys()) {
-    try { await deleteImage(env, imagePathFromUrl(env, oldUrl)!) } catch { /* no pasa nada: ya sirve desde R2 */ }
-  }
-}
-
 // Job de limpieza: borra definitivamente lo que lleva más de 30 días en
 // papelera (productos/servicios, clientes, pedidos, citas) y, por
 // separado, lo que lleva más de 30 días en la papelera de imágenes. Se
@@ -357,8 +318,6 @@ async function migrateGithubImagesToR2() {
 // fallo puntual (ej. GitHub caído) no tumbe el resto de la limpieza.
 async function cleanupExpired() {
   const cutoff = new Date(Date.now() - TRASH_MS)
-
-  try { await migrateGithubImagesToR2() } catch { /* se reintenta en el próximo acceso al panel */ }
 
   try {
     const expiredProducts = await db.select().from(products).where(and(isNotNull(products.deletedAt), lt(products.deletedAt, cutoff)))
