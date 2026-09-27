@@ -2,7 +2,7 @@
 
 ## Architecture
 
-ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un negocio de belleza que vende dos cosas distintas bajo un mismo catálogo: **servicios** agendables (diseño de cejas, pestañas) y **productos** artesanales comprables (jabones, mantequillas). Los datos públicos de la tienda y las operaciones de administración usan server functions de TanStack. Los registros estructurados persisten en Postgres en Neon (vía el driver `neon-http` de Drizzle), las imágenes subidas se confirman en un repo de GitHub vía la API de Contents y se sirven desde `raw.githubusercontent.com`, la autenticación de admin es una única contraseña compartida (`ADMIN_PASSWORD`) con cookie de sesión firmada, y los nuevos pedidos/citas disparan opcionalmente un correo de aviso vía Resend.
+ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un negocio de belleza que vende dos cosas distintas bajo un mismo catálogo: **servicios** agendables (diseño de cejas, pestañas) y **productos** artesanales comprables (jabones, mantequillas). Los datos públicos de la tienda y las operaciones de administración usan server functions de TanStack. Los registros estructurados persisten en Postgres en Neon (vía el driver `neon-http` de Drizzle), las imágenes nuevas se guardan en Cloudflare R2 (bucket `ela-esencia-fotos`, binding `FOTOS`) y se sirven desde `/fotos/<nombre>` (`src/lib/fotos.ts`, `src/routes/fotos/$.ts`; si no hubiera R2, vuelve sola a GitHub), la autenticación de admin es una única contraseña compartida (`ADMIN_PASSWORD`) con cookie de sesión firmada, y los nuevos pedidos/citas disparan opcionalmente un correo de aviso vía Resend.
 
 ## Key Directories
 
@@ -23,7 +23,7 @@ ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un 
 - TypeScript y componentes funcionales de React.
 - Los precios se guardan siempre como centavos enteros, tanto en base de datos como en el estado de la app.
 - Todo el texto de cara al usuario va en español.
-- Neon Postgres para registros consultables, GitHub (API de Contents) para archivos subidos.
+- Neon Postgres para registros consultables, Cloudflare R2 para las fotos subidas (GitHub solo como respaldo).
 - Cada mutación administrativa del servidor está protegida con `requireAdmin()` / `verifySession()`.
 - Genera una migración después de cada cambio de schema con `pnpm db:generate`.
 - Conserva la dirección visual crema, dorado y serif elegante (inspirada en el flyer original de ELA) salvo que el dueño del producto pida un rediseño.

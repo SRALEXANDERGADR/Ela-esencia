@@ -8,6 +8,9 @@
     "GITHUB_BRANCH": "main",
     "GITHUB_UPLOAD_PATH": "public/uploads"
   },
+  // Fotos nuevas de productos y servicios (ver src/lib/fotos.ts). El bucket
+  // tiene que existir en la cuenta de Cloudflare antes de publicar.
+  "r2_buckets": [{ "binding": "FOTOS", "bucket_name": "ela-esencia-fotos" }],
   "observability": {
     "enabled": true
   }

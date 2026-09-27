@@ -5,7 +5,7 @@ import { db } from '../../db'
 import { appointments, content, customers, expenses, imageTrash, invoices, orders, payments, products, purchases, pushSubscriptions } from '../../db/schema'
 import { createSession, clearSession, verifyPassword, verifySession } from './auth'
 import { sendAppointmentNotificationEmail, sendOrderNotificationEmail } from './email'
-import { deleteImageFile, pathFromDownloadUrl } from './github'
+import { deleteImage, imagePathFromUrl, R2_URL_PREFIX } from './fotos'
 import { formatMoney } from './money'
 import { generateVapidKeys, sendPush } from './push'
 import type { PushMessage, VapidKeys } from './push'
@@ -299,15 +299,53 @@ async function reopenInvoiceFor(sourceType: 'pedido' | 'cita', sourceId: number)
   await db.update(invoices).set({ status: 'Pendiente' }).where(and(eq(invoices.sourceType, sourceType), eq(invoices.sourceId, sourceId), eq(invoices.status, 'Cancelada'), eq(invoices.paid, 0)))
 }
 
-// Envía una imagen (por su download_url) a la papelera de imágenes. Si la
-// URL no pertenece al repo configurado (ej. una imagen de Unsplash de la
-// semilla inicial, o una URL externa pegada a mano), no hace nada: solo
-// administramos lo que nosotros mismos subimos a GitHub.
+// Envía una imagen a la papelera de imágenes. Si la URL no es de una foto
+// que subimos nosotros (a GitHub o a R2), ej. una imagen de Unsplash de la
+// semilla inicial o una URL externa pegada a mano, no hace nada.
 async function trashImage(url: string, reason: string) {
   if (!url) return
-  const path = pathFromDownloadUrl(env, url)
+  const path = imagePathFromUrl(env, url)
   if (!path) return
   await db.insert(imageTrash).values({ path, url, reason })
+}
+
+// Migración de una sola vez (se puede quitar cuando ya no quede nada en
+// GitHub): pasa a R2 las fotos de productos y servicios que todavía están
+// en GitHub, actualiza la base y borra el archivo viejo de GitHub. Corre
+// sola con la limpieza al abrir el panel; si no queda nada, no hace nada.
+// Como mucho 8 fotos por vez: Cloudflare limita las conexiones salientes
+// de un solo pedido.
+async function migrateGithubImagesToR2() {
+  if (!env.FOTOS) return
+  const rows = await db.select().from(products)
+  const isPending = (url: string) => {
+    const path = url ? imagePathFromUrl(env, url) : null
+    return Boolean(path) && !path!.startsWith('r2/')
+  }
+  const pending = [...new Set(rows.flatMap((product) => [product.image, ...(product.images ?? [])]).filter(isPending))].slice(0, 8)
+  if (!pending.length) return
+
+  const urlToNew = new Map<string, string>()
+  for (const url of pending) {
+    try {
+      const response = await fetch(url)
+      if (!response.ok) continue
+      const key = imagePathFromUrl(env, url)!.split('/').pop()!
+      await env.FOTOS.put(key, await response.arrayBuffer(), { httpMetadata: { contentType: response.headers.get('content-type') || 'image/jpeg', cacheControl: 'public, max-age=31536000, immutable' } })
+      urlToNew.set(url, R2_URL_PREFIX + key)
+    } catch { /* se reintenta la próxima vez */ }
+  }
+
+  for (const product of rows) {
+    const image = urlToNew.get(product.image) ?? product.image
+    const images = (product.images ?? []).map((url) => urlToNew.get(url) ?? url)
+    if (image === product.image && images.every((url, i) => url === product.images[i])) continue
+    await db.update(products).set({ image, images }).where(eq(products.id, product.id))
+  }
+
+  for (const oldUrl of urlToNew.keys()) {
+    try { await deleteImage(env, imagePathFromUrl(env, oldUrl)!) } catch { /* no pasa nada: ya sirve desde R2 */ }
+  }
 }
 
 // Job de limpieza: borra definitivamente lo que lleva más de 30 días en
@@ -319,6 +357,8 @@ async function trashImage(url: string, reason: string) {
 // fallo puntual (ej. GitHub caído) no tumbe el resto de la limpieza.
 async function cleanupExpired() {
   const cutoff = new Date(Date.now() - TRASH_MS)
+
+  try { await migrateGithubImagesToR2() } catch { /* se reintenta en el próximo acceso al panel */ }
 
   try {
     const expiredProducts = await db.select().from(products).where(and(isNotNull(products.deletedAt), lt(products.deletedAt, cutoff)))
@@ -343,7 +383,7 @@ async function cleanupExpired() {
   try {
     const expiredImages = await db.select().from(imageTrash).where(lt(imageTrash.deletedAt, cutoff))
     for (const image of expiredImages) {
-      try { await deleteImageFile(env, image.path) } catch { /* si GitHub falla, se reintenta luego: la fila no se borra */ continue }
+      try { await deleteImage(env, image.path) } catch { /* si GitHub o R2 fallan, se reintenta luego: la fila no se borra */ continue }
       await db.delete(imageTrash).where(eq(imageTrash.id, image.id))
     }
   } catch { /* idem */ }
