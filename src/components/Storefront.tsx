@@ -292,6 +292,8 @@ export function Storefront({ data }: Props) {
 
   const todayIso = localToday()
   const whatsapp = waNumber(copy.whatsapp)
+  // Métodos de pago del pie: se editan en el panel (Textos → Contacto y redes).
+  const paymentMethods = [...new Set(String(copy.paymentMethods ?? 'Efectivo, Transferencia').split(/[,\n]+/).map((item) => item.trim()).filter(Boolean))].slice(0, 12)
   const waHref = (text: string) => `https://wa.me/${whatsapp}?text=${encodeURIComponent(text)}`
 
   useScrollReveal([visibleProducts.length, category, query, services.length])
@@ -405,7 +407,7 @@ export function Storefront({ data }: Props) {
       <BlockSprig left={LeafBranch} right={LeafBloom} />
       <div className="footer-brand reveal"><BrandMark className="footer-mark" /><p>{copy.footerText}</p></div>
       <div className="reveal delay-1"><span>Conversemos</span><a className="whatsapp" href={`https://wa.me/${whatsapp}`} target="_blank" rel="noreferrer">Escríbenos por WhatsApp <ArrowRight /></a></div>
-      <div className="reveal delay-2"><span>Horario</span><p>{copy.schedule}</p><p className="footer-location">{copy.location}</p></div>
+      <div className="reveal delay-2"><span>Horario</span><p>{copy.schedule}</p><p className="footer-location">{copy.location}</p>{paymentMethods.length > 0 && <div className="footer-payments"><span>Métodos de pago</span><div className="payment-tags">{paymentMethods.map((method) => <b key={method}>{method}</b>)}</div></div>}</div>
       <div className="reveal delay-3"><span>Síguenos</span>{handle(copy.instagram) && <a className="social-line" href={`https://instagram.com/${handle(copy.instagram)}`} target="_blank" rel="noreferrer"><Instagram size={16} />@{handle(copy.instagram)}</a>}{handle(copy.tiktok) && <a className="social-line" href={`https://www.tiktok.com/@${handle(copy.tiktok)}`} target="_blank" rel="noreferrer"><Music2 size={16} />@{handle(copy.tiktok)}</a>}</div>
       <div className="footer-bottom reveal">
         <a className="gadr-credit" href="https://gadrnet.com" target="_blank" rel="noopener noreferrer">

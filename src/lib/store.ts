@@ -4,7 +4,7 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-
 import { db } from '../../db'
 import { appointments, content, customers, expenses, imageTrash, invoices, orders, payments, products, purchases, pushSubscriptions } from '../../db/schema'
 import { createSession, clearSession, verifyPassword, verifySession } from './auth'
-import { sendAppointmentNotificationEmail, sendOrderNotificationEmail } from './email'
+import { parseEmailList, sendAppointmentNotificationEmail, sendOrderNotificationEmail } from './email'
 import { deleteImage, imagePathFromUrl } from './fotos'
 import { formatMoney } from './money'
 import { generateVapidKeys, sendPush } from './push'
@@ -50,6 +50,8 @@ const defaultContent: Record<string, string> = {
   instagram: '@ela.esencia',
   tiktok: '@ela.esencia',
   schedule: 'Lunes a sábado · previa cita',
+  // Se muestran en el pie de la tienda (separados por coma). Vacío = no se muestran.
+  paymentMethods: 'Efectivo, Transferencia',
   developerCredit: 'Diseño y desarrollo de la tienda',
   cartTitle: 'Tu pedido',
   checkoutTitle: 'Completa tu pedido',
@@ -856,7 +858,12 @@ export const purgeInvoice = createServerFn({ method: 'POST' }).inputValidator((i
 // ───────────────────────────────────────────────────────────────────────
 export const saveContent = createServerFn({ method: 'POST' }).inputValidator((data: Record<string, string>) => data).handler(async ({ data }) => {
   await requireAdmin()
-  for (const [key, value] of Object.entries(data)) if (key !== 'vapidKeys' && key !== 'productsSeeded') await db.insert(content).values({ key, value }).onConflictDoUpdate({ target: content.key, set: { value } })
+  for (const [key, raw] of Object.entries(data)) {
+    if (key === 'vapidKeys' || key === 'productsSeeded') continue
+    // Los correos de avisos se guardan limpios: "a@x.com, b@y.com".
+    const value = key === 'notificationEmail' ? parseEmailList(String(raw ?? '')).join(', ') : String(raw ?? '')
+    await db.insert(content).values({ key, value }).onConflictDoUpdate({ target: content.key, set: { value } })
+  }
   return true
 })
 
@@ -934,6 +941,13 @@ async function sendToSubscriptions(rows: Array<{ id: number; endpoint: string; p
   if (!rows.length) return { sent: 0, failed: 0, problem: '' }
   const keys = await getVapidKeys()
   const results = await Promise.all(rows.map((row) => sendPush(row, message, keys, PUSH_SUBJECT)))
+  // Si el servicio de avisos falló un momento (sin conexión, "muy ocupado"
+  // o error de su lado), se intenta una vez más antes de rendirse.
+  const retry = rows.map((_, index) => index).filter((index) => results[index].result === 'error' && (results[index].status === 0 || results[index].status === 429 || results[index].status >= 500))
+  if (retry.length) {
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    await Promise.all(retry.map(async (index) => { results[index] = await sendPush(rows[index], message, keys, PUSH_SUBJECT) }))
+  }
   // Aparatos que ya no existen (app desinstalada o permiso quitado): fuera.
   const gone = rows.filter((_, index) => results[index].result === 'gone').map((row) => row.id)
   if (gone.length) await db.delete(pushSubscriptions).where(inArray(pushSubscriptions.id, gone))

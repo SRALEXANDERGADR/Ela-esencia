@@ -61,3 +61,40 @@ self.addEventListener('notificationclick', (event) => {
 })
 
 self.addEventListener('notificationclose', (event) => event.waitUntil(updateBadge()))
+
+// El navegador a veces cambia la dirección de los avisos (Chrome, Edge y
+// Firefox lo hacen de vez en cuando). Sin esto, los avisos se apagaban
+// solos sin que nadie se diera cuenta. Aquí se crea la nueva y se le avisa
+// a la tienda para que siga mandando los pedidos a este aparato.
+function fromBase64Url(value) {
+  const base64 = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4)
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil((async () => {
+    try {
+      const oldEndpoint = event.oldSubscription ? event.oldSubscription.endpoint : ''
+      let subscription = event.newSubscription || null
+      if (!subscription) {
+        let key = event.oldSubscription && event.oldSubscription.options ? event.oldSubscription.options.applicationServerKey : null
+        if (!key) {
+          const response = await fetch('/api/push-renew', { cache: 'no-store' })
+          key = fromBase64Url((await response.json()).publicKey)
+        }
+        subscription = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })
+      }
+      const keys = subscription.toJSON().keys || {}
+      await fetch('/api/push-renew', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldEndpoint, endpoint: subscription.endpoint, p256dh: keys.p256dh || '', auth: keys.auth || '' }),
+      })
+    } catch (error) {
+      // Si no se pudo aquí, la app lo arregla sola la próxima vez que se abra.
+    }
+  })())
+})

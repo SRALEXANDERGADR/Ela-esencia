@@ -5,7 +5,7 @@ import { cancelInvoice, checkSession, deleteAppointment, deleteCustomer, deleteI
 import type { InvoiceLike, PaymentLike } from '@/lib/invoice'
 import { compressImage } from '@/lib/image'
 import { formatMoney } from '@/lib/money'
-import { fromBase64Url } from '@/lib/push'
+import { fromBase64Url, toBase64Url } from '@/lib/push'
 
 type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; cost: number; stock: number; durationMinutes: number; image: string; images: string[]; featured: boolean; active: boolean }
 type Purchase = { id: number; productId: number; productName: string; fund: string; quantity: number; unitCost: number; totalCost: number; remainingQuantity: number; notes: string; createdAt: string | Date }
@@ -165,6 +165,45 @@ async function pushActiveHere() {
   return Boolean(await registration?.pushManager.getSubscription())
 }
 
+// Si alguien toca «Apagar» en un aparato, se respeta: no se vuelve a
+// encender sola ahí hasta que toque «Activar notificaciones» otra vez.
+const PUSH_OFF_KEY = 'ela-avisos-apagados'
+const pushTurnedOff = () => { try { return localStorage.getItem(PUSH_OFF_KEY) === '1' } catch { return false } }
+const setPushTurnedOff = (off: boolean) => { try { if (off) localStorage.setItem(PUSH_OFF_KEY, '1'); else localStorage.removeItem(PUSH_OFF_KEY) } catch { /* sin almacenamiento */ } }
+
+/** Mantiene los avisos siempre encendidos en este aparato: cada vez que se
+ * abre el panel (o se vuelve a él) revisa que el aparato siga suscrito y
+ * guardado en la tienda; si se perdió (el navegador cambió la dirección, la
+ * tienda lo borró porque dejó de responder, se actualizó la app…), lo vuelve
+ * a crear solo, sin preguntar nada. Solo funciona si ya se dio el permiso. */
+let healing: Promise<void> | null = null
+let lastHeal = 0
+function ensurePushActive(force = false): Promise<void> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return Promise.resolve()
+  if (Notification.permission !== 'granted' || pushTurnedOff()) return Promise.resolve()
+  if (healing) return healing
+  if (!force && Date.now() - lastHeal < 5 * 60 * 1000) return Promise.resolve()
+  healing = (async () => {
+    const registration = await navigator.serviceWorker.register('/admin-sw.js', { scope: '/admin' })
+    registration.update().catch(() => {})
+    await navigator.serviceWorker.ready
+    const setup = await getPushSetup()
+    let subscription = await registration.pushManager.getSubscription()
+    const currentKey = subscription?.options?.applicationServerKey
+    if (subscription && currentKey && toBase64Url(currentKey) !== setup.publicKey) {
+      await subscription.unsubscribe().catch(() => false)
+      subscription = null
+    }
+    if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromBase64Url(setup.publicKey) })
+    if (!setup.devices.some((device) => device.endpoint === subscription!.endpoint)) {
+      const json = subscription.toJSON()
+      await savePushSubscription({ data: { endpoint: subscription.endpoint, p256dh: json.keys?.p256dh ?? '', auth: json.keys?.auth ?? '', label: deviceLabel() } })
+    }
+    lastHeal = Date.now()
+  })().catch(() => { /* se intenta otra vez la próxima vez que se abra */ }).finally(() => { healing = null })
+  return healing
+}
+
 function AppAndNotifications() {
   const [state, setState] = useState<PushState>('cargando')
   const [devices, setDevices] = useState<PushDevice[]>([])
@@ -176,6 +215,7 @@ function AppAndNotifications() {
 
   async function load() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) { setState('no-soportado'); return }
+    await ensurePushActive(true)
     const registration = await navigator.serviceWorker.register('/admin-sw.js', { scope: '/admin' })
     const setup = await getPushSetup()
     setDevices(setup.devices as unknown as PushDevice[])
@@ -205,6 +245,7 @@ function AppAndNotifications() {
   }
 
   const enable = () => act(async () => {
+    setPushTurnedOff(false)
     const permission = await Notification.requestPermission()
     if (permission !== 'granted') {
       setState(permission === 'denied' ? 'bloqueado' : 'apagado')
@@ -234,6 +275,7 @@ function AppAndNotifications() {
       await removePushSubscription({ data: subscription.endpoint })
       await subscription.unsubscribe().catch(() => false)
     }
+    setPushTurnedOff(true)
     await load()
     setMessage('Notificaciones apagadas en este aparato.')
   })
@@ -286,7 +328,9 @@ function AppAndNotifications() {
         <div>
           <strong>Avisos en este aparato</strong>
           {state === 'cargando' && <span>Revisando…</span>}
-          {state === 'no-soportado' && <span>Este navegador no puede recibir notificaciones. Abre el panel en Chrome (Android o computadora) o en Edge. En iPhone, primero instala la app y ábrela desde el ícono.</span>}
+          {state === 'no-soportado' && (/iPhone|iPad/i.test(navigator.userAgent)
+            ? <span>En iPhone los avisos solo funcionan con la app en la pantalla de inicio: abre <b>elaesencia.gadrnet.workers.dev/admin</b> en <b>Safari</b>, entra con la contraseña, toca <b>Compartir</b> (el cuadrito con la flecha) → <b>«Agregar a inicio»</b>. Luego abre la app de ELA desde el ícono y vuelve aquí. (Necesita iPhone con iOS 16.4 o más nuevo.)</span>
+            : <span>Este navegador no puede recibir notificaciones. Abre el panel en Chrome o Edge (Android, Windows o Mac), Firefox o Samsung Internet.</span>)}
           {state === 'bloqueado' && <span className="app-warn">Las notificaciones están bloqueadas para esta página. Toca el candado junto a la dirección (o Ajustes del teléfono → Apps → ELA Admin → Notificaciones) y ponlas en «Permitir»; luego vuelve aquí.</span>}
           {state === 'apagado' && <button type="button" className="admin-action" disabled={working} onClick={enable}><Bell size={16} />{working ? 'Activando…' : 'Activar notificaciones'}</button>}
           {state === 'activo' && <div className="app-actions">
@@ -403,6 +447,16 @@ export function AdminPanel() {
     setAdminManifest(authenticated === true ? 'admin' : 'store')
     if (authenticated) pushActiveHere().then(setPushReady).catch(() => setPushReady(true))
   }, [authenticated, tab])
+
+  // Con la sesión abierta, cada vez que se abre o se vuelve al panel se
+  // revisa que los avisos sigan encendidos en este aparato (ver ensurePushActive).
+  useEffect(() => {
+    if (authenticated !== true) return
+    void ensurePushActive(true).then(() => pushActiveHere().then(setPushReady)).catch(() => {})
+    const onVisible = () => { if (document.visibilityState === 'visible') void ensurePushActive() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [authenticated])
   useEffect(() => () => setAdminManifest('off'), [])
 
   // La notificación abre /admin?tab=citas o ?tab=pedidos. Al abrir o volver
@@ -1319,7 +1373,7 @@ function AppointmentDetail({ item, invoiceBox, onClose, onDelete, onChange }: { 
 function ContentEditor({ values, dirty, onChange, onUpload, onSave, busy, uploading }: { values: Record<string, string>; dirty: boolean; onChange: (value: Record<string, string>) => void; onUpload: (file: File) => void; onSave: () => Promise<void>; busy: boolean; uploading: boolean }) {
   const groups: Array<[string, string, string[]]> = [
     ['Portada', 'Lo primero que se ve al entrar a la tienda.', ['eyebrow', 'heroTitle', 'heroDescription', 'heroCta', 'heroImage']],
-    ['Contacto y redes', 'Número de WhatsApp, horario, ubicación y redes sociales.', ['whatsapp', 'schedule', 'location', 'instagram', 'tiktok', 'footerText']],
+    ['Contacto y redes', 'Número de WhatsApp, horario, ubicación y redes sociales.', ['whatsapp', 'schedule', 'paymentMethods', 'location', 'instagram', 'tiktok', 'footerText']],
     ['Servicios y productos', 'Títulos de las secciones del catálogo.', ['servicesTitle', 'servicesDescription', 'catalogTitle', 'catalogDescription']],
     ['Por qué elegirnos', 'Los tres beneficios de la marca.', ['benefitsTitle', 'benefit1Title', 'benefit1Text', 'benefit2Title', 'benefit2Text', 'benefit3Title', 'benefit3Text']],
     ['Nuestra historia', 'El texto de la marca al final de la página.', ['storyTitle', 'storyText']],
@@ -1327,9 +1381,10 @@ function ContentEditor({ values, dirty, onChange, onUpload, onSave, busy, upload
     ['Marca y menú', 'Nombre, eslogan y las palabras del menú de arriba.', ['brandName', 'brandTagline', 'navServices', 'navCatalog', 'navBenefits', 'navContact']],
     ['Bolsa y formularios', 'Títulos de la bolsa de compras, el pedido y las citas.', ['cartTitle', 'checkoutTitle', 'appointmentTitle']],
   ]
-  const labels: Record<string, string> = { brandName: 'Nombre de marca', brandTagline: 'Eslogan', navServices: 'Menú: servicios', navCatalog: 'Menú: productos', navBenefits: 'Menú: beneficios', navContact: 'Menú: contacto', eyebrow: 'Texto pequeño de arriba', heroTitle: 'Título principal', heroDescription: 'Descripción principal', heroCta: 'Texto del botón', heroImage: 'Foto de portada', benefitsTitle: 'Título de beneficios', benefit1Title: 'Beneficio 1 — título', benefit1Text: 'Beneficio 1 — texto', benefit2Title: 'Beneficio 2 — título', benefit2Text: 'Beneficio 2 — texto', benefit3Title: 'Beneficio 3 — título', benefit3Text: 'Beneficio 3 — texto', servicesTitle: 'Título de servicios', servicesDescription: 'Descripción de servicios', catalogTitle: 'Título de productos', catalogDescription: 'Descripción de productos', storyTitle: 'Título de la historia', storyText: 'Historia de la marca', footerText: 'Frase del pie de página', whatsapp: 'Número de WhatsApp', location: 'Ubicación', instagram: 'Instagram', tiktok: 'TikTok', schedule: 'Horario', cartTitle: 'Título de la bolsa', checkoutTitle: 'Título del formulario de pedido', appointmentTitle: 'Título del formulario de citas', notificationEmail: 'Correo para avisos' }
+  const labels: Record<string, string> = { paymentMethods: 'Métodos de pago', brandName: 'Nombre de marca', brandTagline: 'Eslogan', navServices: 'Menú: servicios', navCatalog: 'Menú: productos', navBenefits: 'Menú: beneficios', navContact: 'Menú: contacto', eyebrow: 'Texto pequeño de arriba', heroTitle: 'Título principal', heroDescription: 'Descripción principal', heroCta: 'Texto del botón', heroImage: 'Foto de portada', benefitsTitle: 'Título de beneficios', benefit1Title: 'Beneficio 1 — título', benefit1Text: 'Beneficio 1 — texto', benefit2Title: 'Beneficio 2 — título', benefit2Text: 'Beneficio 2 — texto', benefit3Title: 'Beneficio 3 — título', benefit3Text: 'Beneficio 3 — texto', servicesTitle: 'Título de servicios', servicesDescription: 'Descripción de servicios', catalogTitle: 'Título de productos', catalogDescription: 'Descripción de productos', storyTitle: 'Título de la historia', storyText: 'Historia de la marca', footerText: 'Frase del pie de página', whatsapp: 'Número de WhatsApp', location: 'Ubicación', instagram: 'Instagram', tiktok: 'TikTok', schedule: 'Horario', cartTitle: 'Título de la bolsa', checkoutTitle: 'Título del formulario de pedido', appointmentTitle: 'Título del formulario de citas', notificationEmail: 'Correo para avisos' }
   const hints: Record<string, string> = {
-    notificationEmail: 'Cada pedido o cita nueva envía un correo con los detalles a esta dirección. Este dato no se muestra en la tienda.',
+    notificationEmail: 'Cada pedido o cita nueva envía un correo con los detalles. Si son varios correos, sepáralos con coma. Este dato no se muestra en la tienda.',
+    paymentMethods: 'Se muestran en el pie de la tienda. Sepáralos con coma, ej.: Efectivo, Transferencia. Déjalo vacío para no mostrarlos.',
     whatsapp: 'Solo números, con el 1 del país. Ej.: 18095551234',
     instagram: 'Con o sin @. Ej.: @ela.esencia',
     tiktok: 'Con o sin @. Ej.: @ela.esencia',
@@ -1346,7 +1401,7 @@ function ContentEditor({ values, dirty, onChange, onUpload, onSave, busy, upload
             <details className="url-details"><summary>O pegar el enlace de una imagen</summary><input value={values.heroImage ?? ''} onChange={(event) => onChange({ ...values, heroImage: event.target.value })} /></details></div>
         </div>
           : longFields.includes(key) ? <textarea rows={3} value={values[key] ?? ''} onChange={(event) => onChange({ ...values, [key]: event.target.value })} />
-          : <input type={key === 'notificationEmail' ? 'email' : 'text'} inputMode={key === 'whatsapp' ? 'tel' : undefined} placeholder={key === 'notificationEmail' ? 'correo@ejemplo.com' : undefined} value={values[key] ?? ''} onChange={(event) => onChange({ ...values, [key]: event.target.value })} />}
+          : <input type="text" inputMode={key === 'whatsapp' ? 'tel' : undefined} placeholder={key === 'notificationEmail' ? 'correo@ejemplo.com, otro@ejemplo.com' : undefined} value={values[key] ?? ''} onChange={(event) => onChange({ ...values, [key]: event.target.value })} />}
         {hints[key] && <small className="field-hint">{hints[key]}</small>}
       </label>)}</div>
     </details>)}

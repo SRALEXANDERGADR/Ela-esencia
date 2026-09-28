@@ -171,7 +171,23 @@ function buildAppointmentEmailHtml(appointment: EmailAppointment): string {
   return wrapEmail('Nueva cita', `Cita ${appointment.appointmentNumber}`, shortDate(appointment.createdAt), body)
 }
 
+/** "a@x.com, b@y.com" (también con punto y coma, espacios o saltos de línea)
+ * → lista de correos válidos, sin repetir. Máximo 10. */
+export function parseEmailList(value: string): string[] {
+  const seen = new Set<string>()
+  for (const part of String(value || '').split(/[\s,;]+/)) {
+    const email = part.trim().toLowerCase()
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) seen.add(email)
+  }
+  return [...seen].slice(0, 10)
+}
+
+// Un correo aparte para cada dirección, así nadie ve los correos de los demás.
 async function sendResendEmail(env: Env, to: string, subject: string, html: string): Promise<void> {
+  await Promise.all(parseEmailList(to).map((address) => sendResendOne(env, address, subject, html)))
+}
+
+async function sendResendOne(env: Env, to: string, subject: string, html: string): Promise<void> {
   if (!to) return
   if (!env.RESEND_API_KEY) {
     console.warn('RESEND_API_KEY no está configurado: no se envió el correo de aviso.')
