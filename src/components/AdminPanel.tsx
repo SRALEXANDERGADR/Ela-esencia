@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { AlertTriangle, ArrowLeft, Ban, Bell, BellOff, BellRing, Boxes, Layers, PiggyBank, ShoppingCart, Calendar, CalendarPlus, Check, CheckCircle2, ChevronRight, Clock, Download, Eye, EyeOff, FileText, Home, ImageOff, ImagePlus, LoaderCircle, LogOut, MapPin, MessageCircle, MoreHorizontal, Package, Pencil, PlusCircle, ReceiptText, RotateCcw, Save, Scissors, Search, Share2, ShoppingBag, Smartphone, Trash, Trash2, UserPlus, Users, Wallet, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Ban, Bell, BellOff, BellRing, Boxes, Layers, PiggyBank, ShoppingCart, Calendar, CalendarPlus, Check, CheckCircle2, ChevronRight, Clock, Download, Eye, EyeOff, FileText, Home, ImageOff, ImagePlus, LoaderCircle, LogOut, MapPin, MessageCircle, MoreHorizontal, Package, Pencil, PlusCircle, ReceiptText, RotateCcw, Save, Scissors, Search, Share2, ShoppingBag, Smartphone, Trash, Trash2, UserPlus, Users, Wallet, X, Lock } from 'lucide-react'
 import { cancelInvoice, checkSession, deleteAppointment, deleteCustomer, deleteInvoice, deleteOrder, deleteExpense, deleteProduct, deletePurchase, getAdminData, recordExpense, recordManualSale, recordPurchase, getPushSetup, login, logout, removePushSubscription, savePushSubscription, sendTestPush, purgeAppointment, purgeCustomer, purgeInvoice, purgeOrder, purgeProduct, registerPayment, restoreAppointment, restoreCustomer, restoreInvoice, restoreOrder, restoreProduct, saveAppointmentAdmin, saveContent, saveCustomer, saveProduct, updateAppointmentStatus, updateOrderStatus } from '@/lib/store'
 import type { InvoiceLike, PaymentLike } from '@/lib/invoice'
 import { compressImage } from '@/lib/image'
 import { formatMoney } from '@/lib/money'
+import { CLAVES_POR_FUNCION, NOMBRE_PLAN, planMinimo, puede, type Funcion, type Plan } from '@/lib/plan'
 import { fromBase64Url, toBase64Url } from '@/lib/push'
 
 type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; cost: number; stock: number; durationMinutes: number; image: string; images: string[]; featured: boolean; active: boolean }
@@ -25,7 +26,7 @@ type TrashData = {
   images: TrashImage[]
   invoices: Array<Invoice & { daysLeft: number }>
 }
-type AdminData = { products: Product[]; orders: Order[]; appointments: Appointment[]; customers: Customer[]; invoices: Invoice[]; payments: Payment[]; purchases: Purchase[]; expenses: Expense[]; content: Record<string, string>; trash: TrashData }
+type AdminData = { plan: Plan; demo: boolean; products: Product[]; orders: Order[]; appointments: Appointment[]; customers: Customer[]; invoices: Invoice[]; payments: Payment[]; purchases: Purchase[]; expenses: Expense[]; content: Record<string, string>; trash: TrashData }
 type Tab = 'resumen' | 'citas' | 'pedidos' | 'facturas' | 'catalogo' | 'finanzas' | 'clientes' | 'contenido' | 'app' | 'papelera'
 const TAB_IDS: Tab[] = ['resumen', 'citas', 'pedidos', 'facturas', 'catalogo', 'finanzas', 'clientes', 'contenido', 'app', 'papelera']
 type CustomerDraft = { id?: number; name: string; email: string; phone: string; address: string; notes: string }
@@ -394,6 +395,16 @@ export function AdminPanel() {
   const [financeView, setFinanceView] = useState<'compras' | 'gastos'>('compras')
   const [financeSettings, setFinanceSettings] = useState({ capitalInicial: '0', reinvestPercent: '70' })
 
+  // Plan de la web (ver src/lib/plan.ts). Lo que el plan no incluye se esconde;
+  // en la demo se muestra con un candado y «Disponible en el plan …».
+  const plan: Plan = data?.plan ?? 'completo'
+  const demo = data?.demo ?? false
+  const can = (funcion: Funcion) => puede(plan, funcion)
+  const appOn = data ? can('app') : false
+  // Textos que cambian si no hay papelera (se borra en vez de enviar a la papelera).
+  const trashAsk = (what: string, extra = '') => can('papelera') ? `¿Enviar ${what} a la papelera?${extra} Podrás restaurarlo durante 30 días.` : `¿Borrar ${what}?${extra}`
+  const trashDone = can('papelera') ? 'Enviado a la papelera.' : 'Borrado.'
+
   function notify(text: string, kind: Toast['kind'] = 'ok') {
     const id = Date.now() + Math.random()
     setToasts((current) => [...current, { id, text, kind }])
@@ -444,19 +455,19 @@ export function AdminPanel() {
   // Solo con la sesión abierta se ofrece instalar el panel como app, y se
   // revisa si este aparato ya recibe los avisos (para recordarlo en Inicio).
   useEffect(() => {
-    setAdminManifest(authenticated === true ? 'admin' : 'store')
-    if (authenticated) pushActiveHere().then(setPushReady).catch(() => setPushReady(true))
-  }, [authenticated, tab])
+    setAdminManifest(authenticated === true && appOn ? 'admin' : 'store')
+    if (authenticated && appOn) pushActiveHere().then(setPushReady).catch(() => setPushReady(true))
+  }, [authenticated, tab, appOn])
 
   // Con la sesión abierta, cada vez que se abre o se vuelve al panel se
   // revisa que los avisos sigan encendidos en este aparato (ver ensurePushActive).
   useEffect(() => {
-    if (authenticated !== true) return
+    if (authenticated !== true || !appOn) return
     void ensurePushActive(true).then(() => pushActiveHere().then(setPushReady)).catch(() => {})
     const onVisible = () => { if (document.visibilityState === 'visible') void ensurePushActive() }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [authenticated])
+  }, [authenticated, appOn])
   useEffect(() => () => setAdminManifest('off'), [])
 
   // La notificación abre /admin?tab=citas o ?tab=pedidos. Al abrir o volver
@@ -511,12 +522,12 @@ export function AdminPanel() {
     try {
       const id = await saveProduct({ data: { ...editing, price: Number(editing.price), originalPrice: Number(editing.originalPrice || 0), stock: Number(editing.stock), durationMinutes: Number(editing.durationMinutes) } })
       const wasNew = !editing.id
-      const newProduct = wasNew && editing.kind === 'producto'
+      const newProduct = wasNew && editing.kind === 'producto' && can('lotes')
       setEditing(null); await refresh()
       // Un producto nuevo empieza en 0: se abre «Reponer» para registrar
       // cuántas unidades compraste y a cuánto (igual que en JB).
       if (newProduct) { setPurchaseDraft({ productId: String(id), quantity: '', unitCost: '', fund: 'capital', notes: '' }); notify('Producto creado. Ahora registra cuántas compraste y a cuánto cada una.') }
-      else notify(wasNew ? 'Servicio creado.' : 'Cambios guardados.')
+      else notify(wasNew ? (editing.kind === 'producto' ? 'Producto creado.' : 'Servicio creado.') : 'Cambios guardados.')
     }
     catch (caught) { setError(errorText(caught, 'No pudimos guardar el artículo.')) }
     finally { setBusy(false) }
@@ -571,14 +582,14 @@ export function AdminPanel() {
   async function sendToTrash(kind: 'order' | 'appointment', item: Order | Appointment, code: string) {
     const label = kind === 'order' ? `el pedido ${code}` : `la cita ${code}`
     const extra = kind === 'order' && (item as Order).status !== 'Cancelado' ? ' Sus unidades vuelven al inventario.' : ''
-    if (!confirm(`¿Enviar ${label} a la papelera?${extra} Podrás restaurarlo durante 30 días.`)) return
+    if (!confirm(trashAsk(label, extra))) return
     const action = kind === 'order' ? deleteOrder : deleteAppointment
     try {
-      await action({ data: { id: item.id } }); await refresh(); notify('Enviado a la papelera.')
+      await action({ data: { id: item.id } }); await refresh(); notify(trashDone)
     } catch (caught) {
       const message = errorText(caught)
       if (invoiceWarning(message)) {
-        if (confirm(`${message}\n\n¿Confirmas de todas formas?`)) await run(() => action({ data: { id: item.id, force: true } }), 'Enviado a la papelera.')
+        if (confirm(`${message}\n\n¿Confirmas de todas formas?`)) await run(() => action({ data: { id: item.id, force: true } }), trashDone)
       } else notify(message, 'error')
     }
     setViewingOrder(null); setViewingAppointment(null)
@@ -654,11 +665,11 @@ export function AdminPanel() {
 
   async function trashInvoice(invoice: Invoice) {
     const message = invoice.paid > 0
-      ? `La factura ${invoice.folio} tiene ${money(invoice.paid)} en abonos. ¿Enviarla a la papelera de todas formas? Podrás restaurarla durante 30 días; después se borra con sus recibos.`
-      : `¿Enviar la factura ${invoice.folio} a la papelera? Podrás restaurarla durante 30 días.`
+      ? (can('papelera') ? `La factura ${invoice.folio} tiene ${money(invoice.paid)} en abonos. ¿Enviarla a la papelera de todas formas? Podrás restaurarla durante 30 días; después se borra con sus recibos.` : `La factura ${invoice.folio} tiene ${money(invoice.paid)} en abonos. ¿Borrarla de todas formas?`)
+      : trashAsk(`la factura ${invoice.folio}`)
     if (!confirm(message)) return
     setViewingInvoice(null)
-    await run(() => deleteInvoice({ data: { id: invoice.id, force: invoice.paid > 0 } }), 'Factura enviada a la papelera.')
+    await run(() => deleteInvoice({ data: { id: invoice.id, force: invoice.paid > 0 } }), (can('papelera') ? 'Factura enviada a la papelera.' : 'Factura borrada.'))
   }
 
   /** La factura con los artículos del pedido, para el PDF. */
@@ -843,27 +854,33 @@ export function AdminPanel() {
   const purchaseProduct = purchaseDraft ? goods.find((product) => String(product.id) === purchaseDraft.productId) : undefined
   const purchaseTotal = purchaseDraft ? Math.round(Number(purchaseDraft.quantity || 0)) * toCents(purchaseDraft.unitCost) : 0
 
-  const tabs: { id: Tab; label: string; hint: string; group: string; icon: React.ReactNode; badge?: number }[] = [
+  const tabs: { id: Tab; label: string; hint: string; group: string; icon: React.ReactNode; badge?: number; fn?: Funcion }[] = [
     { id: 'resumen', label: 'Inicio', hint: 'Lo más importante de hoy', group: 'Día a día', icon: <Home /> },
-    { id: 'citas', label: 'Citas', hint: 'Agenda de servicios', group: 'Día a día', icon: <Calendar />, badge: toConfirm },
-    { id: 'pedidos', label: 'Pedidos', hint: 'Compras de productos', group: 'Día a día', icon: <ShoppingBag />, badge: openOrders.length },
-    { id: 'facturas', label: 'Cobros', hint: 'Facturas, abonos y saldos', group: 'Día a día', icon: <Wallet /> },
-    { id: 'catalogo', label: 'Catálogo', hint: 'Servicios, productos y existencias', group: 'Tu tienda', icon: <Boxes />, badge: goods.filter((product) => product.active && product.stock <= LOW_STOCK).length },
-    { id: 'finanzas', label: 'Finanzas', hint: 'Ganancia, compras, gastos y lo que puedes retirar', group: 'Tu tienda', icon: <PiggyBank /> },
-    { id: 'clientes', label: 'Clientes', hint: 'Tus clientas y su historial', group: 'Tu tienda', icon: <Users /> },
+    { id: 'citas', label: 'Citas', hint: 'Agenda de servicios', group: 'Día a día', icon: <Calendar />, badge: toConfirm, fn: 'citas' },
+    { id: 'pedidos', label: 'Pedidos', hint: 'Compras de productos', group: 'Día a día', icon: <ShoppingBag />, badge: openOrders.length, fn: 'pedidos' },
+    { id: 'facturas', label: 'Cobros', hint: 'Facturas, abonos y saldos', group: 'Día a día', icon: <Wallet />, fn: 'cobros' },
+    { id: 'catalogo', label: 'Catálogo', hint: 'Servicios, productos y existencias', group: 'Tu tienda', icon: <Boxes />, badge: can('existencia') ? goods.filter((product) => product.active && product.stock <= LOW_STOCK).length : 0 },
+    { id: 'finanzas', label: 'Finanzas', hint: 'Ganancia, compras, gastos y lo que puedes retirar', group: 'Tu tienda', icon: <PiggyBank />, fn: 'finanzas' },
+    { id: 'clientes', label: 'Clientes', hint: 'Tus clientas y su historial', group: 'Tu tienda', icon: <Users />, fn: 'clientes' },
     { id: 'contenido', label: 'Textos de la web', hint: 'Lo que se lee en la tienda', group: 'Tu tienda', icon: <FileText /> },
-    { id: 'app', label: 'App y avisos', hint: 'Instalar la app y recibir notificaciones', group: 'Ajustes', icon: <BellRing /> },
-    { id: 'papelera', label: 'Papelera', hint: 'Lo borrado en los últimos 30 días', group: 'Ajustes', icon: <Trash2 />, badge: trashCount },
+    { id: 'app', label: 'App y avisos', hint: 'Instalar la app y recibir notificaciones', group: 'Ajustes', icon: <BellRing />, fn: 'app' },
+    { id: 'papelera', label: 'Papelera', hint: 'Lo borrado en los últimos 30 días', group: 'Ajustes', icon: <Trash2 />, badge: trashCount, fn: 'papelera' },
   ]
-  const groups = Array.from(new Set(tabs.map((item) => item.group)))
-  const mobileMain: Tab[] = ['resumen', 'citas', 'pedidos', 'facturas']
-  const current = tabs.find((item) => item.id === tab)!
+  // Pestañas de este plan. En la demo se ven todas: las que el plan no trae llevan candado.
+  const visibleTabs = tabs.filter((item) => !item.fn || can(item.fn) || demo)
+  const isLocked = (item: { fn?: Funcion }) => Boolean(item.fn && !can(item.fn))
+  const groups = Array.from(new Set(visibleTabs.map((item) => item.group)))
+  const mobileMain: Tab[] = (['resumen', 'citas', 'pedidos', 'facturas', 'catalogo', 'contenido'] as Tab[]).filter((id) => visibleTabs.some((item) => item.id === id)).slice(0, 4)
+  // Si alguien abre una pestaña que su plan no trae (?tab=finanzas), se vuelve a Inicio.
+  const view: Tab = visibleTabs.some((item) => item.id === tab) ? tab : 'resumen'
+  const current = tabs.find((item) => item.id === view)!
+  const lockedFn = isLocked(current) ? current.fn! : null
 
   // Funciones (no componentes) para que el buscador no pierda el foco al escribir.
   const chips = (options: Array<[string, string, number?]>) => <div className="filter-chips">{options.map(([value, label, count]) => <button key={value} className={filter === value ? 'active' : ''} onClick={() => setFilter(value)}>{label}{count !== undefined && <b>{count}</b>}</button>)}</div>
   const orderCard = (order: Order) => <OrderCard key={order.id} order={order} invoice={findInvoiceFor('pedido', order.id)} onChange={(status, paymentStatus) => changeStatus('order', order, status, paymentStatus)} onOpen={() => setViewingOrder(order)} onInvoice={(invoice) => setViewingInvoice(invoice)} onDelete={() => sendToTrash('order', order, order.orderNumber)} />
   const appointmentCard = (item: Appointment) => <AppointmentCard key={item.id} item={item} invoice={findInvoiceFor('cita', item.id)} onChange={(status, paymentStatus) => changeStatus('appointment', item, status, paymentStatus)} onOpen={() => setViewingAppointment(item)} onInvoice={(invoice) => setViewingInvoice(invoice)} onDelete={() => sendToTrash('appointment', item, item.appointmentNumber)} />
-  const chipsCatalog = () => <div className="filter-chips">{([['todos', 'Todos'], ['agotados', 'Agotados'], ['bajo', 'Quedan pocos'], ['sincosto', 'Sin costo'], ['ocultos', 'Ocultos']] as Array<[CatalogFilter, string]>).map(([id, label]) => {
+  const chipsCatalog = () => <div className="filter-chips">{([['todos', 'Todos'], ['agotados', 'Agotados'], ['bajo', 'Quedan pocos'], ['sincosto', 'Sin costo'], ['ocultos', 'Ocultos']] as Array<[CatalogFilter, string]>).filter(([id]) => id !== 'sincosto' || can('lotes')).map(([id, label]) => {
     const count = goods.filter((product) => matchesCatalogFilter(product, id)).length
     if (id !== 'todos' && count === 0) return null
     return <button key={id} className={`${catalogFilter === id ? 'active' : ''} ${id === 'sincosto' ? 'warn' : ''}`} onClick={() => setCatalogFilter(id)}>{label}<b>{count}</b></button>
@@ -872,19 +889,19 @@ export function AdminPanel() {
 
   return <div className="admin-shell">
     <aside className="admin-sidebar"><Link to="/" className="admin-brand"><span>E</span><div>ELA<small>Administración</small></div></Link>
-      <nav>{groups.map((group) => <div key={group} className="nav-group"><small className="nav-group-title">{group}</small>{tabs.filter((item) => item.group === group).map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => goTo(item.id)} title={item.label}>{item.icon}<span className="nav-label">{item.label}</span>{!!item.badge && <b className="nav-badge">{item.badge}</b>}</button>)}</div>)}</nav>
+      <nav>{groups.map((group) => <div key={group} className="nav-group"><small className="nav-group-title">{group}</small>{visibleTabs.filter((item) => item.group === group).map((item) => <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => goTo(item.id)} title={isLocked(item) ? `${item.label} · Disponible en el plan ${NOMBRE_PLAN[planMinimo(item.fn!)]}` : item.label}>{item.icon}<span className="nav-label">{item.label}</span>{!!item.badge && <b className="nav-badge">{item.badge}</b>}{isLocked(item) && <Lock className="nav-lock" />}</button>)}</div>)}</nav>
       <Link to="/" className="logout sidebar-store"><Eye />Ver la tienda</Link>
       <button className="logout" onClick={handleLogout}><LogOut />Cerrar sesión</button>
     </aside>
 
     {/* Menú inferior en el teléfono: las 4 secciones del día a día + "Más". */}
     <nav className="admin-bottom-nav">
-      {mobileMain.map((id) => { const item = tabs.find((t) => t.id === id)!; return <button key={id} className={tab === id ? 'active' : ''} onClick={() => goTo(id)}>{item.icon}<span>{item.label}</span>{!!item.badge && <b className="nav-badge">{item.badge}</b>}</button> })}
-      <button className={!mobileMain.includes(tab) ? 'active' : ''} onClick={() => setMoreOpen(true)}><MoreHorizontal /><span>Más</span></button>
+      {mobileMain.map((id) => { const item = tabs.find((t) => t.id === id)!; return <button key={id} className={view === id ? 'active' : ''} onClick={() => goTo(id)}>{item.icon}<span>{item.label}</span>{!!item.badge && <b className="nav-badge">{item.badge}</b>}</button> })}
+      <button className={!mobileMain.includes(view) ? 'active' : ''} onClick={() => setMoreOpen(true)}><MoreHorizontal /><span>Más</span></button>
     </nav>
     {moreOpen && <div className="more-sheet-wrap" onClick={() => setMoreOpen(false)}><div className="more-sheet" onClick={(event) => event.stopPropagation()}>
       <div className="more-sheet-head"><strong>Más opciones</strong><button className="icon-button icon-button-sm" onClick={() => setMoreOpen(false)} aria-label="Cerrar"><X size={16} /></button></div>
-      {groups.filter((group) => group !== 'Día a día').map((group) => <div key={group} className="more-group"><small className="more-group-title">{group}</small>{tabs.filter((item) => item.group === group).map((item) => <button key={item.id} onClick={() => goTo(item.id)}>{item.icon}<div><strong>{item.label}</strong><small>{item.hint}</small></div>{!!item.badge && <b className="nav-badge">{item.badge}</b>}<ChevronRight size={16} /></button>)}</div>)}
+      {groups.map((group) => { const items = visibleTabs.filter((item) => item.group === group && !mobileMain.includes(item.id)); return items.length ? <div key={group} className="more-group"><small className="more-group-title">{group}</small>{items.map((item) => <button key={item.id} onClick={() => goTo(item.id)}>{item.icon}<div><strong>{item.label}</strong><small>{isLocked(item) ? `Disponible en el plan ${NOMBRE_PLAN[planMinimo(item.fn!)]}` : item.hint}</small></div>{!!item.badge && <b className="nav-badge">{item.badge}</b>}{isLocked(item) ? <Lock size={16} /> : <ChevronRight size={16} />}</button>)}</div> : null })}
       <small className="more-group-title">Salir</small>
       <Link to="/"><Eye /><div><strong>Ver la tienda</strong><small>Como la ven tus clientas</small></div><ChevronRight size={16} /></Link>
       <button onClick={handleLogout}><LogOut /><div><strong>Cerrar sesión</strong><small>Salir del panel</small></div></button>
@@ -893,59 +910,67 @@ export function AdminPanel() {
     <main className="admin-main">
       <header><div><span>{current.hint}</span><h1>{current.label}</h1></div><Link to="/" className="header-store">Ver tienda <ArrowLeft /></Link></header>
 
-      {tab === 'resumen' && <div className="dashboard">
+      {lockedFn && <LockedCard title={current.label} text={LOCK_TEXT[current.id] ?? current.hint} plan={planMinimo(lockedFn)} />}
+
+      {!lockedFn && view === 'resumen' && <div className="dashboard">
         <p className="greeting">{greeting()} · <span>{new Intl.DateTimeFormat('es-DO', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}</span></p>
         <div className="metric-grid">
-          <button onClick={() => goTo('citas', 'hoy')}><span>Citas de hoy</span><strong>{todayAppointments.length}</strong><small>{toConfirm ? `${toConfirm} por confirmar` : 'Todo confirmado'}</small></button>
-          <button onClick={() => goTo('pedidos', 'abiertos')}><span>Pedidos por atender</span><strong>{openOrders.length}</strong><small>Pendientes o preparando</small></button>
-          <button onClick={() => goTo('facturas', 'porcobrar')}><span>Por cobrar</span><strong>{money(pendingBalance)}</strong><small>Saldos pendientes</small></button>
-          <button onClick={() => goTo('facturas', 'pagadas')}><span>Cobrado este mes</span><strong>{money(collectedMonth)}</strong><small>Suma de abonos</small></button>
+          {can('citas') && <button onClick={() => goTo('citas', 'hoy')}><span>Citas de hoy</span><strong>{todayAppointments.length}</strong><small>{toConfirm ? `${toConfirm} por confirmar` : 'Todo confirmado'}</small></button>}
+          {can('pedidos') && <button onClick={() => goTo('pedidos', 'abiertos')}><span>Pedidos por atender</span><strong>{openOrders.length}</strong><small>Pendientes o preparando</small></button>}
+          {can('cobros') && <button onClick={() => goTo('facturas', 'porcobrar')}><span>Por cobrar</span><strong>{money(pendingBalance)}</strong><small>Saldos pendientes</small></button>}
+          {can('cobros') && <button onClick={() => goTo('facturas', 'pagadas')}><span>Cobrado este mes</span><strong>{money(collectedMonth)}</strong><small>Suma de abonos</small></button>}
+          {!can('pedidos') && <button onClick={() => { goTo('catalogo'); setCatalogKind('servicio') }}><span>Servicios</span><strong>{services.length}</strong><small>En tu tienda</small></button>}
+          {!can('pedidos') && <button onClick={() => { goTo('catalogo'); setCatalogKind('producto') }}><span>Productos</span><strong>{goods.length}</strong><small>En tu tienda</small></button>}
         </div>
 
-        {!pushReady && <button className="push-reminder" onClick={() => goTo('app')}><BellRing /><div><strong>Activa los avisos en este teléfono</strong><small>Te llega una notificación con cada cita y pedido nuevo, aunque la app esté cerrada.</small></div><ChevronRight size={18} /></button>}
+        {appOn && !pushReady && <button className="push-reminder" onClick={() => goTo('app')}><BellRing /><div><strong>Activa los avisos en este teléfono</strong><small>Te llega una notificación con cada cita y pedido nuevo, aunque la app esté cerrada.</small></div><ChevronRight size={18} /></button>}
 
         {/* Menú en cuadritos (en el teléfono): todas las secciones a un toque. */}
-        <div className="tile-menu">{tabs.filter((item) => item.id !== 'resumen').map((item) => <button key={item.id} onClick={() => goTo(item.id)}>{item.icon}<span>{item.label}</span>{!!item.badge && <b className="nav-badge">{item.badge}</b>}</button>)}</div>
+        <div className="tile-menu">{visibleTabs.filter((item) => item.id !== 'resumen').map((item) => <button key={item.id} onClick={() => goTo(item.id)}>{item.icon}<span>{item.label}</span>{!!item.badge && <b className="nav-badge">{item.badge}</b>}{isLocked(item) && <Lock className="tile-lock" />}</button>)}</div>
 
         <h3 className="dash-subtitle">Acciones rápidas</h3>
         <div className="quick-actions">
-          <button onClick={() => setBookingDraft(newBooking())} disabled={!services.length}><CalendarPlus />Nueva cita</button>
-          <button onClick={() => openSale()} disabled={!goods.some((product) => product.stock > 0)}><ShoppingCart />Registrar venta</button>
-          <button onClick={() => openPurchase()} disabled={!goods.length}><ShoppingBag />Registrar compra</button>
+          {can('citas') && <button onClick={() => setBookingDraft(newBooking())} disabled={!services.length}><CalendarPlus />Nueva cita</button>}
+          {can('ventaFuera') && <button onClick={() => openSale()} disabled={!goods.some((product) => product.stock > 0)}><ShoppingCart />Registrar venta</button>}
+          {can('lotes') && <button onClick={() => openPurchase()} disabled={!goods.length}><ShoppingBag />Registrar compra</button>}
           <button onClick={() => { goTo('catalogo'); setCatalogKind('producto'); setEditing(blankProduct('producto')) }}><PlusCircle />Nuevo producto</button>
           <button onClick={() => { goTo('catalogo'); setCatalogKind('servicio'); setEditing(blankProduct('servicio')) }}><Scissors />Nuevo servicio</button>
-          <button onClick={() => { goTo('clientes'); setEditingCustomer(blankCustomer) }}><UserPlus />Nuevo cliente</button>
+          {can('clientes') && <button onClick={() => { goTo('clientes'); setEditingCustomer(blankCustomer) }}><UserPlus />Nuevo cliente</button>}
         </div>
 
-        {lowStockProducts.length > 0 && <div className="admin-notice"><AlertTriangle size={16} /><div><strong>Quedan pocas unidades:</strong> {lowStockProducts.map((product) => `${product.name} (${product.stock})`).join(', ')}.</div><button onClick={() => { goTo('catalogo'); setCatalogKind('producto'); setCatalogFilter('bajo') }}>Reponer</button></div>}
+        {can('existencia') && lowStockProducts.length > 0 && <div className="admin-notice"><AlertTriangle size={16} /><div><strong>Quedan pocas unidades:</strong> {lowStockProducts.map((product) => `${product.name} (${product.stock})`).join(', ')}.</div><button onClick={() => { goTo('catalogo'); setCatalogKind('producto'); setCatalogFilter('bajo') }}>{can('lotes') ? 'Reponer' : 'Ver'}</button></div>}
 
         <div className="dashboard-columns">
-          <section className="admin-card">
+          {!can('citas') && !can('pedidos') && <section className="admin-card">
+            <div className="card-title"><div><span>TU TIENDA</span><h2>Catálogo</h2></div><button onClick={() => goTo('catalogo')}>Ir al catálogo</button></div>
+            <p className="section-help">Aquí cambias tus servicios y productos, sus fotos y precios, y los textos de la web. Tus clientas te escriben por WhatsApp para pedir o agendar.</p>
+          </section>}
+          {can('citas') && <section className="admin-card">
             <div className="card-title"><div><span>AGENDA</span><h2>Próximas citas</h2></div><button onClick={() => goTo('citas')}>Ver todas</button></div>
             <div className="record-list compact">{upcomingAppointments.slice(0, 3).map(appointmentCard)}</div>{!upcomingAppointments.length && <div className="empty-admin small"><Calendar /><p>No hay citas próximas.</p></div>}
-          </section>
-          <section className="admin-card">
+          </section>}
+          {can('pedidos') && <section className="admin-card">
             <div className="card-title"><div><span>PEDIDOS</span><h2>Por atender</h2></div><button onClick={() => goTo('pedidos')}>Ver todos</button></div>
             <div className="record-list compact">{openOrders.slice(0, 3).map(orderCard)}</div>{!openOrders.length && <div className="empty-admin small"><Package /><p>No hay pedidos pendientes.</p></div>}
-          </section>
+          </section>}
         </div>
       </div>}
 
-      {tab === 'citas' && <section className="admin-card">
+      {!lockedFn && view === 'citas' && <section className="admin-card">
         <div className="card-title"><div><span>AGENDA</span><h2>{filteredAppointments.length} {filteredAppointments.length === 1 ? 'cita' : 'citas'}</h2></div><button className="admin-action" disabled={!services.length} onClick={() => setBookingDraft(newBooking())}><PlusCircle />Nueva cita</button></div>
         {chips([['', 'Próximas'], ['hoy', 'Hoy', todayAppointments.length], ['pendientes', 'Por confirmar', toConfirm], ['pasadas', 'Pasadas y cerradas'], ['todas', 'Todas']])}
         {searchBox("Buscar por clienta, servicio, teléfono o número…")}
         <div className="record-list">{filteredAppointments.map(appointmentCard)}</div>{!filteredAppointments.length && <div className="empty-admin">No hay citas en esta lista.</div>}
       </section>}
 
-      {tab === 'pedidos' && <section className="admin-card">
+      {!lockedFn && view === 'pedidos' && <section className="admin-card">
         <div className="card-title"><div><span>PRODUCTOS VENDIDOS</span><h2>{filteredOrders.length} {filteredOrders.length === 1 ? 'pedido' : 'pedidos'}</h2></div></div>
         {chips([['', 'Todos'], ['abiertos', 'Por atender', openOrders.length], ['sinpagar', 'Sin pagar'], ['enviados', 'Enviados y entregados'], ['cancelados', 'Cancelados']])}
         {searchBox("Buscar por clienta, teléfono o número de pedido…")}
         <div className="record-list">{filteredOrders.map(orderCard)}</div>{!filteredOrders.length && <div className="empty-admin">No hay pedidos en esta lista.</div>}
       </section>}
 
-      {tab === 'facturas' && <section className="admin-card">
+      {!lockedFn && view === 'facturas' && <section className="admin-card">
         <div className="card-title"><div><span>COBRANZA</span><h2>{filteredInvoices.length} {filteredInvoices.length === 1 ? 'factura' : 'facturas'}</h2></div></div>
         <p className="section-help">Cada pedido y cada cita crea su factura sola. Desde cada tarjeta puedes abonar, descargar, compartir, anular o enviar a la papelera. Si marcas un pedido o cita como "Pagado", la factura se salda sola.</p>
         {chips([['', 'Todas'], ['porcobrar', 'Por cobrar', openInvoices.filter((invoice) => invoice.paid < invoice.total).length], ['pagadas', 'Pagadas'], ['anuladas', 'Anuladas']])}
@@ -953,23 +978,23 @@ export function AdminPanel() {
         <div className="record-list">{filteredInvoices.map((invoice) => <InvoiceCard key={invoice.id} invoice={invoice} doc={docFor(invoice)} onPay={() => { setError(''); setPayingInvoice(invoice) }} onOpen={() => setViewingInvoice(invoice)} onAnnul={() => annulInvoice(invoice)} onDelete={() => trashInvoice(invoice)} />)}</div>{!filteredInvoices.length && <div className="empty-admin">No hay facturas en esta lista.</div>}
       </section>}
 
-      {tab === 'catalogo' && <section className="admin-card">
+      {!lockedFn && view === 'catalogo' && <section className="admin-card">
         <div className="card-title"><div><span>LO QUE OFRECES</span><h2>{filteredProducts.length} {catalogKind === 'servicio' ? (filteredProducts.length === 1 ? 'servicio' : 'servicios') : (filteredProducts.length === 1 ? 'producto' : 'productos')}</h2></div><button className="admin-action" onClick={() => { setError(''); setEditing(blankProduct(catalogKind)) }}><PlusCircle />{catalogKind === 'servicio' ? 'Nuevo servicio' : 'Nuevo producto'}</button></div>
         <div className="segmented"><button className={catalogKind === 'servicio' ? 'active' : ''} onClick={() => setCatalogKind('servicio')}><Scissors size={15} />Servicios <b>{services.length}</b></button><button className={catalogKind === 'producto' ? 'active' : ''} onClick={() => setCatalogKind('producto')}><Package size={15} />Productos <b>{goods.length}</b></button></div>
-        {catalogKind === 'producto' && <div className="catalog-tools">
-          <button className="act-inline" onClick={() => openSale()} disabled={!goods.some((product) => product.stock > 0)}><ShoppingCart size={16} />Registrar venta</button>
-          <button className="act-inline" onClick={() => openPurchase()} disabled={!goods.length}><ShoppingBag size={16} />Registrar compra</button>
+        {catalogKind === 'producto' && (can('ventaFuera') || can('lotes') || demo) && <div className="catalog-tools">
+          {can('ventaFuera') ? <button className="act-inline" onClick={() => openSale()} disabled={!goods.some((product) => product.stock > 0)}><ShoppingCart size={16} />Registrar venta</button> : demo && <LockedPill funcion="ventaFuera" label="Registrar venta" />}
+          {can('lotes') ? <button className="act-inline" onClick={() => openPurchase()} disabled={!goods.length}><ShoppingBag size={16} />Registrar compra</button> : demo && <LockedPill funcion="lotes" label="Registrar compra" />}
         </div>}
         {searchBox("Buscar por nombre o categoría…")}
-        {catalogKind === 'producto' && chipsCatalog()}
-        {catalogKind === 'producto' && uncostedProducts.length > 0 && catalogFilter !== 'sincosto' && <div className="admin-notice"><AlertTriangle size={16} /><div>{uncostedProducts.length === 1 ? '1 producto tiene' : `${uncostedProducts.length} productos tienen`} unidades sin una compra registrada: su costo cuenta como RD$0 y la ganancia sale más alta de lo real.</div><button onClick={() => setCatalogFilter('sincosto')}>Ver cuáles</button></div>}
-        {catalogKind === 'producto' && catalogFilter === 'sincosto' && <p className="section-help">Para corregirlo: toca «Editar», pon las unidades en 0 y guarda; después toca «Reponer» y registra cuántas tienes y a cuánto te salió cada una.</p>}
-        <div className="record-list">{filteredProducts.map((product) => catalogKind === 'producto' ? <ProductCard key={product.id} product={product} noCost={uncostedIds.has(product.id)} lots={data.purchases.filter((purchase) => purchase.productId === product.id).length} onEdit={() => { setError(''); setEditing({ ...product, images: product.images ?? [] }) }} onRestock={() => openPurchase(product)} onSell={() => openSale(product)} onLots={() => setLotsProductId(product.id)} onDelete={() => { if (confirm(`¿Enviar "${product.name}" a la papelera? Deja de verse en la tienda; lo puedes restaurar durante 30 días.`)) run(() => deleteProduct({ data: product.id }), 'Enviado a la papelera.') }} />
-          : <ServiceCard key={product.id} product={product} onEdit={() => { setError(''); setEditing({ ...product, images: product.images ?? [] }) }} onToggle={() => run(() => saveProduct({ data: { ...product, active: !product.active } }), product.active ? 'Oculto de la tienda.' : 'Visible en la tienda.')} onDelete={() => { if (confirm(`¿Enviar "${product.name}" a la papelera? Podrás restaurarlo durante 30 días.`)) run(() => deleteProduct({ data: product.id }), 'Enviado a la papelera.') }} />)}</div>
+        {catalogKind === 'producto' && can('existencia') && chipsCatalog()}
+        {catalogKind === 'producto' && can('lotes') && uncostedProducts.length > 0 && catalogFilter !== 'sincosto' && <div className="admin-notice"><AlertTriangle size={16} /><div>{uncostedProducts.length === 1 ? '1 producto tiene' : `${uncostedProducts.length} productos tienen`} unidades sin una compra registrada: su costo cuenta como RD$0 y la ganancia sale más alta de lo real.</div><button onClick={() => setCatalogFilter('sincosto')}>Ver cuáles</button></div>}
+        {catalogKind === 'producto' && can('lotes') && catalogFilter === 'sincosto' && <p className="section-help">Para corregirlo: toca «Editar», pon las unidades en 0 y guarda; después toca «Reponer» y registra cuántas tienes y a cuánto te salió cada una.</p>}
+        <div className="record-list">{filteredProducts.map((product) => catalogKind === 'producto' ? <ProductCard key={product.id} plan={plan} demo={demo} product={product} noCost={uncostedIds.has(product.id)} lots={data.purchases.filter((purchase) => purchase.productId === product.id).length} onEdit={() => { setError(''); setEditing({ ...product, images: product.images ?? [] }) }} onRestock={() => openPurchase(product)} onSell={() => openSale(product)} onLots={() => setLotsProductId(product.id)} onDelete={() => { if (confirm(can('papelera') ? `¿Enviar "${product.name}" a la papelera? Deja de verse en la tienda; lo puedes restaurar durante 30 días.` : `¿Borrar "${product.name}"? Deja de verse en la tienda.`)) run(() => deleteProduct({ data: product.id }), trashDone) }} />
+          : <ServiceCard key={product.id} product={product} onEdit={() => { setError(''); setEditing({ ...product, images: product.images ?? [] }) }} onToggle={() => run(() => saveProduct({ data: { ...product, active: !product.active } }), product.active ? 'Oculto de la tienda.' : 'Visible en la tienda.')} onDelete={() => { if (confirm(trashAsk(`"${product.name}"`))) run(() => deleteProduct({ data: product.id }), trashDone) }} />)}</div>
         {!filteredProducts.length && <div className="empty-admin">{q || catalogFilter !== 'todos' ? 'No hay resultados en esta lista.' : catalogKind === 'servicio' ? 'Todavía no hay servicios. Crea el primero.' : 'Todavía no hay productos. Crea el primero.'}</div>}
       </section>}
 
-      {tab === 'finanzas' && <div className="dashboard">
+      {!lockedFn && view === 'finanzas' && <div className="dashboard">
         <div className="quick-actions three">
           <button onClick={() => openSale()} disabled={!goods.some((product) => product.stock > 0)}><ShoppingCart />Registrar venta</button>
           <button onClick={() => openPurchase()} disabled={!goods.length}><ShoppingBag />Registrar compra</button>
@@ -1021,7 +1046,7 @@ export function AdminPanel() {
         </details>
       </div>}
 
-      {tab === 'clientes' && <section className="admin-card">
+      {!lockedFn && view === 'clientes' && <section className="admin-card">
         <div className="card-title"><div><span>COMUNIDAD</span><h2>{filteredCustomers.length} {filteredCustomers.length === 1 ? 'cliente' : 'clientes'}</h2></div><button className="admin-action" onClick={() => { setError(''); setEditingCustomer(blankCustomer) }}><UserPlus />Nuevo cliente</button></div>
         <p className="section-help">Las clientas se guardan solas cuando hacen un pedido o agendan una cita.</p>
         {searchBox("Buscar por nombre, correo o teléfono…")}
@@ -1030,15 +1055,15 @@ export function AdminPanel() {
           const appointmentsCount = data.appointments.filter((item) => item.customerId === customer.id).length
           const owed = data.invoices.filter((invoice) => invoice.customerId === customer.id && invoice.status !== 'Cancelada').reduce((sum, invoice) => sum + Math.max(invoice.total - invoice.paid, 0), 0)
           const wa = waLink(customer.phone, `Hola ${customer.name.split(' ')[0]}, te escribimos de ELA.`)
-          return <article key={customer.id}><div className="customer-card-top"><div className="avatar">{customer.name.slice(0, 2).toUpperCase()}</div><div className="row-actions">{wa && <a className="wa-button" href={wa} target="_blank" rel="noreferrer" title="Escribir por WhatsApp"><MessageCircle /></a>}<button title="Editar" onClick={() => { setError(''); setEditingCustomer(customer) }}><Pencil /></button><button title="Eliminar" onClick={() => { if (confirm(`¿Enviar a ${customer.name} a la papelera? Podrás restaurarlo durante 30 días.`)) run(() => deleteCustomer({ data: customer.id }), 'Enviado a la papelera.') }}><Trash2 /></button></div></div><h3>{customer.name}</h3>{customer.phone && <p>{customer.phone}</p>}{customer.email && <a href={`mailto:${customer.email}`}>{customer.email}</a>}{customer.address && <p>{customer.address}</p>}{customer.notes && <small className="customer-notes">{customer.notes}</small>}<small>{ordersCount} {ordersCount === 1 ? 'pedido' : 'pedidos'} · {appointmentsCount} {appointmentsCount === 1 ? 'cita' : 'citas'}{owed > 0 && <> · <em className="balance-due">debe {money(owed)}</em></>}</small></article>
+          return <article key={customer.id}><div className="customer-card-top"><div className="avatar">{customer.name.slice(0, 2).toUpperCase()}</div><div className="row-actions">{wa && <a className="wa-button" href={wa} target="_blank" rel="noreferrer" title="Escribir por WhatsApp"><MessageCircle /></a>}<button title="Editar" onClick={() => { setError(''); setEditingCustomer(customer) }}><Pencil /></button><button title="Eliminar" onClick={() => { if (confirm(trashAsk(customer.name))) run(() => deleteCustomer({ data: customer.id }), trashDone) }}><Trash2 /></button></div></div><h3>{customer.name}</h3>{customer.phone && <p>{customer.phone}</p>}{customer.email && <a href={`mailto:${customer.email}`}>{customer.email}</a>}{customer.address && <p>{customer.address}</p>}{customer.notes && <small className="customer-notes">{customer.notes}</small>}<small>{ordersCount} {ordersCount === 1 ? 'pedido' : 'pedidos'} · {appointmentsCount} {appointmentsCount === 1 ? 'cita' : 'citas'}{owed > 0 && <> · <em className="balance-due">debe {money(owed)}</em></>}</small></article>
         })}{!filteredCustomers.length && <div className="empty-admin">No hay clientes que mostrar.</div>}</div>
       </section>}
 
-      {tab === 'contenido' && <ContentEditor values={contentDraft} dirty={contentDirty} onChange={(next) => { setContentDraft(next); setContentDirty(true) }} onUpload={(file) => uploadImage(file, 'hero')} onSave={saveSiteContent} busy={busy} uploading={uploading} />}
+      {!lockedFn && view === 'contenido' && <ContentEditor plan={plan} values={contentDraft} dirty={contentDirty} onChange={(next) => { setContentDraft(next); setContentDirty(true) }} onUpload={(file) => uploadImage(file, 'hero')} onSave={saveSiteContent} busy={busy} uploading={uploading} />}
 
-      {tab === 'app' && <div className="dashboard"><AppAndNotifications /><div className="admin-card app-help"><h3>¿Cómo funciona?</h3><ol><li>Toca <b>Instalar app</b>: queda un ícono "ELA Admin" en tu teléfono, como cualquier otra app.</li><li>Toca <b>Activar notificaciones</b> y luego <b>Permitir</b>.</li><li>Cada vez que una clienta agende una cita o haga un pedido en la web, te suena el teléfono. Al tocar el aviso se abre la app en Citas o Pedidos.</li></ol><p>Si otra persona también atiende la tienda, que entre al panel desde su teléfono y haga lo mismo.</p></div></div>}
+      {!lockedFn && view === 'app' && <div className="dashboard"><AppAndNotifications /><div className="admin-card app-help"><h3>¿Cómo funciona?</h3><ol><li>Toca <b>Instalar app</b>: queda un ícono "ELA Admin" en tu teléfono, como cualquier otra app.</li><li>Toca <b>Activar notificaciones</b> y luego <b>Permitir</b>.</li><li>Cada vez que una clienta agende una cita o haga un pedido en la web, te suena el teléfono. Al tocar el aviso se abre la app en Citas o Pedidos.</li></ol><p>Si otra persona también atiende la tienda, que entre al panel desde su teléfono y haga lo mismo.</p></div></div>}
 
-      {tab === 'papelera' && <TrashPanel trash={data.trash} onRestore={restoreItem} onPurge={purgeItem} />}
+      {!lockedFn && view === 'papelera' && <TrashPanel trash={data.trash} onRestore={restoreItem} onPurge={purgeItem} />}
     </main>
 
     <div className="toast-stack" aria-live="polite">{toasts.map((toast) => <div key={toast.id} className={`toast toast-${toast.kind}`}>{toast.kind === 'ok' ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}<span>{toast.text}</span></div>)}</div>
@@ -1063,7 +1088,7 @@ export function AdminPanel() {
         <label className="wide">Descripción<textarea required rows={3} value={editing.description} onChange={(event) => setEditing({ ...editing, description: event.target.value })} /></label>
         <label>Precio (RD$)<input required type="number" inputMode="decimal" min="0" step="0.01" value={editing.price / 100} onChange={(event) => setEditing({ ...editing, price: Math.round(Number(event.target.value) * 100) })} /></label>
         <label>Precio antes (opcional)<input type="number" inputMode="decimal" min="0" step="0.01" placeholder="Sale tachado si es mayor" value={editing.originalPrice ? editing.originalPrice / 100 : ''} onChange={(event) => setEditing({ ...editing, originalPrice: Math.round(Number(event.target.value || 0) * 100) })} /></label>
-        {editing.kind === 'producto' ? (editing.id ? <label>Unidades en existencia<input required type="number" inputMode="numeric" min="0" value={editing.stock} onChange={(event) => setEditing({ ...editing, stock: Number(event.target.value) })} /><small className="field-hint">Para sumar unidades usa «Reponer» (así queda lo que costaron). Cambia este número solo para corregir.</small></label> : <p className="field-hint wide">Un producto nuevo empieza en 0. Al guardar se abre «Reponer» para poner cuántas compraste y a cuánto.</p>) : <label>Duración (minutos)<input required type="number" inputMode="numeric" min="5" step="5" value={editing.durationMinutes} onChange={(event) => setEditing({ ...editing, durationMinutes: Number(event.target.value) })} /></label>}
+        {editing.kind === 'producto' ? (can('existencia') ? (editing.id || !can('lotes') ? <label>Unidades en existencia<input required type="number" inputMode="numeric" min="0" value={editing.stock} onChange={(event) => setEditing({ ...editing, stock: Number(event.target.value) })} /><small className="field-hint">{can('lotes') ? 'Para sumar unidades usa «Reponer» (así queda lo que costaron). Cambia este número solo para corregir.' : 'Pon cuántas unidades tienes. Baja solo cada vez que vendes; cámbialo cuando recibas más.'}</small></label> : <p className="field-hint wide">Un producto nuevo empieza en 0. Al guardar se abre «Reponer» para poner cuántas compraste y a cuánto.</p>) : null) : <label>Duración (minutos)<input required type="number" inputMode="numeric" min="5" step="5" value={editing.durationMinutes} onChange={(event) => setEditing({ ...editing, durationMinutes: Number(event.target.value) })} /></label>}
         <label className="check-field"><input type="checkbox" checked={editing.active} onChange={(event) => setEditing({ ...editing, active: event.target.checked })} />Visible en la tienda</label>
         <label className="check-field"><input type="checkbox" checked={editing.featured} onChange={(event) => setEditing({ ...editing, featured: event.target.checked })} />Destacado (sale primero)</label>
       </div>
@@ -1160,15 +1185,15 @@ export function AdminPanel() {
       <button className="primary-button full lots-restock" onClick={() => openPurchase(lotsProduct)}><ShoppingBag />Reponer este producto</button>
     </div></div>}
 
-    {liveOrder && <OrderDetail order={liveOrder} invoiceBox={invoiceBoxFor(findInvoiceFor('pedido', liveOrder.id))} onClose={() => setViewingOrder(null)} onDelete={() => sendToTrash('order', liveOrder, liveOrder.orderNumber)} onChange={(status, paymentStatus) => changeStatus('order', liveOrder, status, paymentStatus)} />}
-    {liveAppointment && <AppointmentDetail item={liveAppointment} invoiceBox={invoiceBoxFor(findInvoiceFor('cita', liveAppointment.id))} onClose={() => setViewingAppointment(null)} onDelete={() => sendToTrash('appointment', liveAppointment, liveAppointment.appointmentNumber)} onChange={(status, paymentStatus) => changeStatus('appointment', liveAppointment, status, paymentStatus)} />}
+    {liveOrder && <OrderDetail canTrash={can('papelera')} order={liveOrder} invoiceBox={invoiceBoxFor(findInvoiceFor('pedido', liveOrder.id))} onClose={() => setViewingOrder(null)} onDelete={() => sendToTrash('order', liveOrder, liveOrder.orderNumber)} onChange={(status, paymentStatus) => changeStatus('order', liveOrder, status, paymentStatus)} />}
+    {liveAppointment && <AppointmentDetail canTrash={can('papelera')} item={liveAppointment} invoiceBox={invoiceBoxFor(findInvoiceFor('cita', liveAppointment.id))} onClose={() => setViewingAppointment(null)} onDelete={() => sendToTrash('appointment', liveAppointment, liveAppointment.appointmentNumber)} onChange={(status, paymentStatus) => changeStatus('appointment', liveAppointment, status, paymentStatus)} />}
     {liveInvoice && <div className="modal-wrap" onClick={() => setViewingInvoice(null)}><div className="modal-card detail-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close icon-button" onClick={() => setViewingInvoice(null)} aria-label="Cerrar"><X /></button>
       <span className="drawer-kicker">{liveInvoice.sourceType === 'cita' ? 'FACTURA DE CITA' : 'FACTURA DE PEDIDO'}</span>
       <h2>{liveInvoice.customerName}</h2>
       <p className="invoice-summary">{liveInvoice.concept}</p>
       {docFor(liveInvoice).lines && <div className="detail-lines">{docFor(liveInvoice).lines!.map((line, index) => <div key={index}><span>{line.quantity} × {line.name}</span><strong>{money(line.price * line.quantity)}</strong></div>)}</div>}
       {invoiceBoxFor(liveInvoice)}
-      <div className="detail-footer">{liveInvoice.status !== 'Cancelada' && <button className="text-muted-btn" onClick={() => annulInvoice(liveInvoice)}><Ban size={15} />Anular factura</button>}<button className="text-danger" onClick={() => trashInvoice(liveInvoice)}><Trash2 size={15} />Enviar a la papelera</button></div>
+      <div className="detail-footer">{liveInvoice.status !== 'Cancelada' && <button className="text-muted-btn" onClick={() => annulInvoice(liveInvoice)}><Ban size={15} />Anular factura</button>}<button className="text-danger" onClick={() => trashInvoice(liveInvoice)}><Trash2 size={15} />{can('papelera') ? 'Enviar a la papelera' : 'Borrar factura'}</button></div>
     </div></div>}
   </div>
 }
@@ -1198,8 +1223,13 @@ function LotCard({ lot, status, showProduct, onDelete }: { lot: Purchase; status
   </article>
 }
 
-function ProductCard({ product, noCost, lots, onEdit, onRestock, onSell, onLots, onDelete }: { product: Product; noCost: boolean; lots: number; onEdit: () => void; onRestock: () => void; onSell: () => void; onLots: () => void; onDelete: () => void }) {
+function ProductCard({ plan, demo, product, noCost, lots, onEdit, onRestock, onSell, onLots, onDelete }: { plan: Plan; demo: boolean; product: Product; noCost: boolean; lots: number; onEdit: () => void; onRestock: () => void; onSell: () => void; onLots: () => void; onDelete: () => void }) {
   const margin = product.price > 0 && product.cost > 0 ? Math.round(((product.price - product.cost) / product.price) * 100) : null
+  // Qué trae el plan: existencia (Profesional) y lotes/ventas por fuera (Completo).
+  const stockOn = puede(plan, 'existencia'), lotsOn = puede(plan, 'lotes'), saleOn = puede(plan, 'ventaFuera')
+  const lockedAct = (funcion: Funcion, label: string) => demo
+    ? <button className="act" disabled title={`Disponible en el plan ${NOMBRE_PLAN[planMinimo(funcion)]}`} aria-label={`${label}: disponible en el plan ${NOMBRE_PLAN[planMinimo(funcion)]}`}><Lock />{label}<small>Plan {NOMBRE_PLAN[planMinimo(funcion)]}</small></button>
+    : null
   return <article className={`record-card ${product.active ? '' : 'is-closed'}`}>
     <header className="record-head">
       <img className="record-thumb" src={product.image || '/placeholder.png'} alt="" loading="lazy" />
@@ -1207,16 +1237,16 @@ function ProductCard({ product, noCost, lots, onEdit, onRestock, onSell, onLots,
       <div className="record-price">{product.originalPrice > product.price && <s>{money(product.originalPrice)}</s>}<strong className="record-amount">{money(product.price)}</strong></div>
     </header>
     <div className="pill-row">
-      <span className={`pill ${product.stock === 0 ? 'bad' : product.stock <= LOW_STOCK ? 'warn' : 'ok'}`}>{product.stock === 0 ? 'Agotado' : `${product.stock} en existencia`}</span>
-      {noCost ? <span className="pill bad">Sin costo registrado</span> : product.cost > 0 && <span className="pill">Costo {money(product.cost)}</span>}
-      {margin !== null && <span className={`pill ${margin < 15 ? 'warn' : ''}`}>Ganancia {margin}%</span>}
+      {stockOn && <span className={`pill ${product.stock === 0 ? 'bad' : product.stock <= LOW_STOCK ? 'warn' : 'ok'}`}>{product.stock === 0 ? 'Agotado' : `${product.stock} en existencia`}</span>}
+      {lotsOn && (noCost ? <span className="pill bad">Sin costo registrado</span> : product.cost > 0 && <span className="pill">Costo {money(product.cost)}</span>)}
+      {lotsOn && margin !== null && <span className={`pill ${margin < 15 ? 'warn' : ''}`}>Ganancia {margin}%</span>}
       {!product.active && <span className="pill">Oculto</span>}
     </div>
     <div className="card-actions five">
       <button className="act" onClick={onEdit}><Pencil />Editar</button>
-      <button className="act primary" onClick={onRestock}><ShoppingBag />Reponer</button>
-      <button className="act" disabled={product.stock <= 0} onClick={onSell}><ShoppingCart />Vender</button>
-      <button className="act" disabled={!lots} onClick={onLots}><Layers />Compras</button>
+      {lotsOn ? <button className="act primary" onClick={onRestock}><ShoppingBag />Reponer</button> : lockedAct('lotes', 'Reponer')}
+      {saleOn ? <button className="act" disabled={product.stock <= 0} onClick={onSell}><ShoppingCart />Vender</button> : lockedAct('ventaFuera', 'Vender')}
+      {lotsOn ? <button className="act" disabled={!lots} onClick={onLots}><Layers />Compras</button> : lockedAct('lotes', 'Compras')}
       <button className="act danger" onClick={onDelete}><Trash2 />Borrar</button>
     </div>
   </article>
@@ -1342,7 +1372,7 @@ function InvoiceBox({ invoice, doc, payments, onPay }: { invoice: Invoice; doc: 
   </div>
 }
 
-function OrderDetail({ order, invoiceBox, onClose, onDelete, onChange }: { order: Order; invoiceBox: React.ReactNode; onClose: () => void; onDelete: () => void; onChange: (status: string, paymentStatus: string) => void }) {
+function OrderDetail({ order, invoiceBox, canTrash, onClose, onDelete, onChange }: { order: Order; invoiceBox: React.ReactNode; canTrash: boolean; onClose: () => void; onDelete: () => void; onChange: (status: string, paymentStatus: string) => void }) {
   const wa = waLink(order.phone, `Hola ${order.customerName.split(' ')[0]}, te escribimos de ELA sobre tu pedido ${order.orderNumber}.`)
   return <div className="modal-wrap" onClick={onClose}><div className="modal-card detail-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close icon-button" onClick={onClose} aria-label="Cerrar"><X /></button>
     <span className="drawer-kicker">PEDIDO {order.orderNumber} · {shortDate(order.createdAt)}</span>
@@ -1352,11 +1382,11 @@ function OrderDetail({ order, invoiceBox, onClose, onDelete, onChange }: { order
     <div className="detail-lines">{order.items.map((line, index) => <div key={index}><span>{line.quantity} × {line.name}</span><strong>{money(line.price * line.quantity)}</strong></div>)}<div className="detail-total"><span>Total</span><strong>{money(order.total)}</strong></div></div>
     <div className="form-grid detail-status"><label>Estado<StatusSelect label="Estado" value={order.status} options={ORDER_STATUSES} onChange={(status) => onChange(status, order.paymentStatus)} /></label><label>Pago<StatusSelect label="Pago" value={order.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(order.status, paymentStatus)} /></label></div>
     {invoiceBox}
-    <div className="detail-footer"><button className="text-danger" onClick={onDelete}><Trash2 size={15} />Enviar pedido a la papelera</button></div>
+    <div className="detail-footer"><button className="text-danger" onClick={onDelete}><Trash2 size={15} />{canTrash ? 'Enviar pedido a la papelera' : 'Borrar pedido'}</button></div>
   </div></div>
 }
 
-function AppointmentDetail({ item, invoiceBox, onClose, onDelete, onChange }: { item: Appointment; invoiceBox: React.ReactNode; onClose: () => void; onDelete: () => void; onChange: (status: string, paymentStatus: string) => void }) {
+function AppointmentDetail({ item, invoiceBox, canTrash, onClose, onDelete, onChange }: { item: Appointment; invoiceBox: React.ReactNode; canTrash: boolean; onClose: () => void; onDelete: () => void; onChange: (status: string, paymentStatus: string) => void }) {
   const wa = waLink(item.phone, `Hola ${item.customerName.split(' ')[0]}, te escribimos de ELA para confirmar tu cita de ${item.serviceName} el ${niceDate(item.date).toLowerCase()} a las ${niceTime(item.time)}.`)
   return <div className="modal-wrap" onClick={onClose}><div className="modal-card detail-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close icon-button" onClick={onClose} aria-label="Cerrar"><X /></button>
     <span className="drawer-kicker">CITA {item.appointmentNumber}</span>
@@ -1366,12 +1396,43 @@ function AppointmentDetail({ item, invoiceBox, onClose, onDelete, onChange }: { 
     <div className="detail-lines"><div><span>{item.serviceName}</span><strong>{money(item.price)}</strong></div><div><span>Fecha</span><strong>{niceDate(item.date)} · {niceTime(item.time)}</strong></div>{item.notes && <div className="detail-note"><span>Notas de la clienta</span><p>{item.notes}</p></div>}</div>
     <div className="form-grid detail-status"><label>Estado<StatusSelect label="Estado" value={item.status} options={APPOINTMENT_STATUSES} onChange={(status) => onChange(status, item.paymentStatus)} /></label><label>Pago<StatusSelect label="Pago" value={item.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(item.status, paymentStatus)} /></label></div>
     {invoiceBox}
-    <div className="detail-footer"><button className="text-danger" onClick={onDelete}><Trash2 size={15} />Enviar cita a la papelera</button></div>
+    <div className="detail-footer"><button className="text-danger" onClick={onDelete}><Trash2 size={15} />{canTrash ? 'Enviar cita a la papelera' : 'Borrar cita'}</button></div>
   </div></div>
 }
 
-function ContentEditor({ values, dirty, onChange, onUpload, onSave, busy, uploading }: { values: Record<string, string>; dirty: boolean; onChange: (value: Record<string, string>) => void; onUpload: (file: File) => void; onSave: () => Promise<void>; busy: boolean; uploading: boolean }) {
-  const groups: Array<[string, string, string[]]> = [
+// ───────────────────────────────────────────────────────────────────────
+// PLANES — lo que el plan no trae. En la web de un cliente no sale; en la demo
+// sale con un candado y «Disponible en el plan …» para que se vea lo que se gana al subir.
+// ───────────────────────────────────────────────────────────────────────
+const LOCK_TEXT: Partial<Record<Tab, string>> = {
+  citas: 'Las clientas agendan su cita en la web y tú ves la agenda completa, con su estado.',
+  pedidos: 'Las clientas hacen su pedido en la web y tú lo ves aquí, con su estado y su pago.',
+  facturas: 'Cada pedido y cada cita crea su factura sola. Cobra por abonos y descarga o comparte facturas y recibos en PDF.',
+  finanzas: 'Mira cuánto ganas, cuánto compraste, tus gastos y cuánto puedes retirar.',
+  clientes: 'Todas tus clientas guardadas, con su historial de pedidos, citas y lo que te deben.',
+  app: 'Instala el panel como app en tu teléfono y recibe un aviso con cada pedido y cada cita nueva.',
+  papelera: 'Recupera lo que borraste por error durante 30 días.',
+}
+
+function LockedCard({ title, text, plan }: { title: string; text: string; plan: Plan }) {
+  return <section className="admin-card locked-card">
+    <Lock />
+    <h2>{title}</h2>
+    <p><strong>Disponible en el plan {NOMBRE_PLAN[plan]}</strong></p>
+    <p>{text}</p>
+    <a className="admin-action" href="https://gadrnet.com" target="_blank" rel="noopener noreferrer">Ver precios</a>
+  </section>
+}
+
+function LockedPill({ funcion, label }: { funcion: Funcion; label: string }) {
+  return <span className="locked-pill"><Lock />{label} · Disponible en el plan {NOMBRE_PLAN[planMinimo(funcion)]}</span>
+}
+
+function ContentEditor({ plan, values, dirty, onChange, onUpload, onSave, busy, uploading }: { plan: Plan; values: Record<string, string>; dirty: boolean; onChange: (value: Record<string, string>) => void; onUpload: (file: File) => void; onSave: () => Promise<void>; busy: boolean; uploading: boolean }) {
+  // Los textos de funciones que el plan no trae (bolsa, citas, correo, métodos de
+  // pago) no se muestran. No se borran: al subir de plan vuelven a salir.
+  const allowed = (key: string) => { const funcion = CLAVES_POR_FUNCION[key]; return !funcion || puede(plan, funcion) }
+  const allGroups: Array<[string, string, string[]]> = [
     ['Portada', 'Lo primero que se ve al entrar a la tienda.', ['eyebrow', 'heroTitle', 'heroDescription', 'heroCta', 'heroImage']],
     ['Contacto y redes', 'Número de WhatsApp, horario, ubicación y redes sociales.', ['whatsapp', 'schedule', 'paymentMethods', 'location', 'instagram', 'tiktok', 'footerText']],
     ['Servicios y productos', 'Títulos de las secciones del catálogo.', ['servicesTitle', 'servicesDescription', 'catalogTitle', 'catalogDescription']],
@@ -1381,6 +1442,7 @@ function ContentEditor({ values, dirty, onChange, onUpload, onSave, busy, upload
     ['Marca y menú', 'Nombre, eslogan y las palabras del menú de arriba.', ['brandName', 'brandTagline', 'navServices', 'navCatalog', 'navBenefits', 'navContact']],
     ['Bolsa y formularios', 'Títulos de la bolsa de compras, el pedido y las citas.', ['cartTitle', 'checkoutTitle', 'appointmentTitle']],
   ]
+  const groups = allGroups.map(([title, description, keys]): [string, string, string[]] => [title, description, keys.filter(allowed)]).filter(([, , keys]) => keys.length > 0)
   const labels: Record<string, string> = { paymentMethods: 'Métodos de pago', brandName: 'Nombre de marca', brandTagline: 'Eslogan', navServices: 'Menú: servicios', navCatalog: 'Menú: productos', navBenefits: 'Menú: beneficios', navContact: 'Menú: contacto', eyebrow: 'Texto pequeño de arriba', heroTitle: 'Título principal', heroDescription: 'Descripción principal', heroCta: 'Texto del botón', heroImage: 'Foto de portada', benefitsTitle: 'Título de beneficios', benefit1Title: 'Beneficio 1 — título', benefit1Text: 'Beneficio 1 — texto', benefit2Title: 'Beneficio 2 — título', benefit2Text: 'Beneficio 2 — texto', benefit3Title: 'Beneficio 3 — título', benefit3Text: 'Beneficio 3 — texto', servicesTitle: 'Título de servicios', servicesDescription: 'Descripción de servicios', catalogTitle: 'Título de productos', catalogDescription: 'Descripción de productos', storyTitle: 'Título de la historia', storyText: 'Historia de la marca', footerText: 'Frase del pie de página', whatsapp: 'Número de WhatsApp', location: 'Ubicación', instagram: 'Instagram', tiktok: 'TikTok', schedule: 'Horario', cartTitle: 'Título de la bolsa', checkoutTitle: 'Título del formulario de pedido', appointmentTitle: 'Título del formulario de citas', notificationEmail: 'Correo para avisos' }
   const hints: Record<string, string> = {
     notificationEmail: 'Cada pedido o cita nueva envía un correo con los detalles. Si son varios correos, sepáralos con coma. Este dato no se muestra en la tienda.',

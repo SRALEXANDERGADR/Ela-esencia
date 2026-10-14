@@ -1,8 +1,15 @@
-import { HeadContent, Link, Scripts, createRootRoute } from '@tanstack/react-router'
+import { HeadContent, Link, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
+import { PlanBar } from '@/components/PlanBar'
+import { getPlanInfo } from '@/lib/store'
 
 import '../styles.css'
 
 export const Route = createRootRoute({
+  // El servidor lee el plan (variable PLAN, ?plan= o cookie) para que la página
+  // salga bien desde el principio. Solo cambia al recargar, por eso no se repite
+  // en cada navegación.
+  loader: () => getPlanInfo(),
+  staleTime: Infinity,
   head: () => ({
     meta: [
       {
@@ -84,12 +91,23 @@ export const Route = createRootRoute({
       { rel: 'msapplication-config', href: '/browserconfig.xml' },
     ],
   }),
+  component: RootLayout,
   shellComponent: RootDocument,
   // Si algo falla, se muestra un mensaje amable en vez de una pantalla en
   // blanco. El error real queda en los logs de Cloudflare.
   errorComponent: () => <ErrorScreen title="No pudimos cargar la página" text="Hubo un problema de conexión. Vuelve a intentarlo en un momento." retry />,
   notFoundComponent: () => <ErrorScreen title="Esta página no existe" text="Puede que el enlace esté incompleto o que la página se haya movido." />,
 })
+
+function RootLayout() {
+  const { plan, demo } = Route.useLoaderData()
+  // La barrita va ANTES del resto para guardar la cookie del plan antes de que
+  // la página pida datos al servidor.
+  return <>
+    <PlanBar plan={plan} demo={demo} />
+    <Outlet />
+  </>
+}
 
 function ErrorScreen({ title, text, retry = false }: { title: string; text: string; retry?: boolean }) {
   return (

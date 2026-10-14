@@ -65,3 +65,7 @@ Cada vez que un cliente completa un pedido o agenda una cita, se crea automátic
 - Registrar un abono parcial (efectivo, transferencia o tarjeta), lo que genera un **recibo** con su propio folio (`REC-DDMMAAAA-XXXX`).
 - Descargar tanto la factura como cada recibo en PDF, o compartirlos directamente por WhatsApp.
 - El estado de la factura pasa automáticamente de *Pendiente* → *Abonado* → *Pagada* según el saldo restante.
+
+## Planes
+
+La web se ofrece en 3 planes (Básico, Profesional y Completo) con el mismo código. Se escoge con la variable `PLAN` de `wrangler.jsonc` (`demo`, `basico`, `profesional` o `completo`). En modo demo se cambia con `?plan=basico|profesional|completo`. Detalle completo en `AGENTS.md` → «Planes».

@@ -89,3 +89,29 @@ ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un 
 
 - `products.images` (jsonb, creada por `ensureSchema()`): fotos extra además de `image` (la principal). Hasta 11 en total. En el panel se suben varias a la vez, se elige la principal y se quitan; las que ya no se usan van a la papelera de imágenes.
 - En la tienda, cada tarjeta tiene una galería que se desliza (scroll-snap, como JB) con contador "1/4"; al tocar la foto o el nombre se abre una ficha grande con la galería, la descripción y el botón de agregar/agendar.
+
+## Planes (octubre 2026)
+
+La web se vende en 3 planes con **el mismo código**; el plan lo decide una variable. Todo se pregunta en un solo archivo: `src/lib/plan.ts` (`PLANES`, `FUNCIONES`, `puede(plan, funcion)`). No hay `if plan === …` regados: para mover una función de plan, se cambia su línea en `FUNCIONES`.
+
+**Variable `PLAN` en `wrangler.jsonc` (`vars`):**
+- `"demo"` (así está hoy): web de muestra. El plan se escoge con `?plan=basico|profesional|completo` en cualquier dirección y se guarda 30 días en la cookie `gadr_plan`. Sin `?plan` ni cookie = completo. El servidor lee el plan (dirección o cookie) para que la página salga bien desde el principio. Abajo sale la barrita «Demo · Plan X · Cambiar plan · Ver precios» (`src/components/PlanBar.tsx`); solo en demo.
+- `"basico"`, `"profesional"` o `"completo"`: web ya vendida a una clienta. El plan queda fijo (ni `?plan` ni la cookie lo cambian) y la barrita no sale.
+- Sin `PLAN` (o con otro valor) = completo, así nada de lo que ya funcionaba se rompe.
+- El servidor lo lee en `src/lib/plan-server.ts` (`currentPlan()`, `requirePlan()`).
+
+**Qué lleva cada plan (RD$800 / RD$1,500 / RD$2,500 al mes; entrada = el doble):**
+- **Básico:** catálogo de productos y servicios con fotos, precios, categorías y buscador; botón «Pedir por WhatsApp» en cada producto y «Agendar por WhatsApp» en cada servicio; compartir. Panel: Inicio, Catálogo (productos, servicios, fotos) y Textos de la web. Sin bolsa, sin citas en la web, sin pedidos guardados, sin existencias, sin números.
+- **Profesional:** todo lo del Básico + bolsa y pedidos en la web (`carrito`), citas en la web (`citas`), pedidos y citas en el panel con su estado (`pedidos`), existencia de cada producto (`existencia`), métodos de pago (`metodosPago`), Cobros: facturas en PDF y abonos (`cobros`) y Clientes (`clientes`). **Sin lotes:** las unidades se ponen directo al crear/editar el producto y al vender siguen bajando solas (sale del costo actual del producto, como las existencias viejas sin compra).
+- **Completo:** todo + inventario por lotes «Reponer»/Compras (`lotes`), venta por fuera (`ventaFuera`), gastos (`gastos`), Finanzas (`finanzas`), app «ELA Admin» con notificaciones (`app`), avisos por correo (`correo`) y papelera (`papelera`).
+
+**Qué pasa con lo que el plan no incluye:**
+- Tienda pública: no sale (sin botones muertos). Ej.: en Básico, en vez de «Agregar» sale «Pedir por WhatsApp».
+- Panel, web de cliente: no sale (pestañas, botones, textos del editor).
+- Panel, demo: sale con candado y «Disponible en el plan Profesional/Completo» (`LockedCard`, `LockedPill`).
+- Servidor: cada función rechaza con «Esta función no está incluida en tu plan» (`requirePlan('funcion')` en `store.ts`). `getAdminData` no manda los datos de lo que el plan no trae. Las notificaciones y el correo simplemente no se envían.
+- **Cambiar de plan nunca borra datos.** Al bajar de plan lo que sobra se esconde; al subir vuelve a salir tal cual. Detalles: en Básico los productos nuevos quedan con 0 unidades (al subir a Profesional hay que poner sus unidades); sin papelera, «Borrar» manda el elemento a la papelera oculta (se limpia solo a los 30 días, como siempre); en Completo después de haber estado en Profesional, las unidades que se pusieron a mano salen como «Sin costo registrado» hasta que se registre una compra.
+
+**Para los demás:** `public/gadr-planes.json` lo lee gadrnet.com (con `public/_headers` para permitir leerlo desde otro sitio). Si cambia lo que lleva un plan, hay que cambiar también ese archivo y `FUNCIONES` en `plan.ts`.
+
+**Cómo probar:** abrir `/?plan=basico`, `/?plan=profesional` y `/?plan=completo` (y `/admin` en cada uno) en tamaño de teléfono. En completo todo debe funcionar igual que antes.

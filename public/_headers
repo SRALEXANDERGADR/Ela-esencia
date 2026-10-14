@@ -1,0 +1,5 @@
+# Para que gadrnet.com pueda leer los planes desde otro sitio.
+/gadr-planes.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=300
+  Content-Type: application/json; charset=utf-8

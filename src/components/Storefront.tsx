@@ -4,6 +4,7 @@ import { ArrowRight, Calendar, Check, ChevronLeft, ChevronRight, Clock, Instagra
 import { createAppointment, createOrder, type CartLine } from '@/lib/store'
 import { ShareButton } from './ShareButton'
 import { formatMoney } from '@/lib/money'
+import { puede, type Plan } from '@/lib/plan'
 import { LeafBloom, LeafBranch, LeafSpray } from './LeafBranch'
 
 /** Mueve suavemente las 4 matas decorativas de las esquinas con el
@@ -42,7 +43,7 @@ function useLeafParallax() {
 }
 
 type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; stock: number; durationMinutes: number; image: string; images?: string[]; featured: boolean }
-type Props = { data: { products: Product[]; content: Record<string, string> } }
+type Props = { data: { products: Product[]; content: Record<string, string>; plan?: Plan } }
 
 const money = formatMoney
 const CART_KEY = 'ela-cart'
@@ -162,6 +163,13 @@ function useScrollReveal(deps: unknown[]) {
 
 export function Storefront({ data }: Props) {
   const { products, content: copy } = data
+  // Qué trae el plan (ver src/lib/plan.ts). Lo que el plan no incluye NO sale:
+  // sin botones muertos. Sin plan definido = completo.
+  const plan: Plan = data.plan ?? 'completo'
+  const canCart = puede(plan, 'carrito')
+  const canBook = puede(plan, 'citas')
+  const canStock = puede(plan, 'existencia')
+  const canPayments = puede(plan, 'metodosPago')
   const services = useMemo(() => products.filter((p) => p.kind === 'servicio'), [products])
   const goods = useMemo(() => products.filter((p) => p.kind === 'producto'), [products])
 
@@ -184,6 +192,7 @@ export function Storefront({ data }: Props) {
   // La bolsa se guarda en este teléfono: si la clienta cierra la página,
   // al volver sigue ahí. Se ajusta a las unidades que haya hoy.
   useEffect(() => {
+    if (!canCart) return // plan Básico: no hay bolsa
     try {
       const saved = JSON.parse(localStorage.getItem(CART_KEY) || '[]') as CartLine[]
       const valid = saved.flatMap((line) => {
@@ -194,9 +203,9 @@ export function Storefront({ data }: Props) {
       if (valid.length) setCart(valid)
     } catch { /* sin almacenamiento: la bolsa empieza vacía */ }
     cartLoaded.current = true
-  }, [products])
+  }, [products, canCart])
   useEffect(() => {
-    if (!cartLoaded.current) return
+    if (!canCart || !cartLoaded.current) return
     try { localStorage.setItem(CART_KEY, JSON.stringify(cart)) } catch { /* ignorar */ }
   }, [cart])
 
@@ -295,6 +304,10 @@ export function Storefront({ data }: Props) {
   // Métodos de pago del pie: se editan en el panel (Textos → Contacto y redes).
   const paymentMethods = [...new Set(String(copy.paymentMethods ?? 'Efectivo, Transferencia').split(/[,\n]+/).map((item) => item.trim()).filter(Boolean))].slice(0, 12)
   const waHref = (text: string) => `https://wa.me/${whatsapp}?text=${encodeURIComponent(text)}`
+  const openWa = (text: string) => window.open(waHref(text), '_blank', 'noopener')
+  // Sin bolsa ni citas en la web (plan Básico), el cliente pide o agenda por WhatsApp.
+  const orderText = (product: Product) => `Hola, quiero pedir este producto de la web: ${product.name} (${money(product.price)}).`
+  const bookText = (service: Product) => `Hola, quiero agendar este servicio de la web: ${service.name} (${money(service.price)}).`
 
   useScrollReveal([visibleProducts.length, category, query, services.length])
   // Fotos que fallaron antes de que la página terminara de cargar (el
@@ -328,7 +341,7 @@ export function Storefront({ data }: Props) {
       <a className="wordmark" href="#inicio"><BrandMark /></a>
       <nav className="desktop-nav"><a href="#servicios">{copy.navServices}</a><a href="#catalogo">{copy.navCatalog}</a><a href="#beneficios">{copy.navBenefits}</a><a href="#contacto">{copy.navContact}</a></nav>
       <div className="topbar-actions">
-        <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`Abrir bolsa (${cartCount})`}><ShoppingBag size={19} /><span>Bolsa</span><b className={cartCount ? 'has-items' : ''}>{cartCount}</b></button>
+        {canCart && <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`Abrir bolsa (${cartCount})`}><ShoppingBag size={19} /><span>Bolsa</span><b className={cartCount ? 'has-items' : ''}>{cartCount}</b></button>}
       </div>
     </header>
 
@@ -373,7 +386,9 @@ export function Storefront({ data }: Props) {
               <h3>{service.name}</h3>
               <p>{service.description}</p>
               <div className="service-meta"><span><Clock size={14} />{service.durationMinutes} min</span></div>
-              <div className="product-action"><strong>{service.originalPrice > service.price && <span className="price-was">{money(service.originalPrice)}</span>}{money(service.price)}</strong><button onClick={() => { setBookingService(service); setBookingConfirmation(null); setBookingError('') }}>Agendar cita<Calendar size={16} /></button></div>
+              <div className="product-action"><strong>{service.originalPrice > service.price && <span className="price-was">{money(service.originalPrice)}</span>}{money(service.price)}</strong>{canBook
+              ? <button onClick={() => { setBookingService(service); setBookingConfirmation(null); setBookingError('') }}>Agendar cita<Calendar size={16} /></button>
+              : <button onClick={() => openWa(bookText(service))}>Agendar por WhatsApp<MessageCircle size={16} /></button>}</div>
             </div>
           </article>)}
           {!services.length && <div className="empty-state"><Scissors /><h3>Muy pronto nuevos servicios</h3><p>Vuelve pronto para agendar tu cita.</p></div>}
@@ -387,9 +402,11 @@ export function Storefront({ data }: Props) {
           <aside className="filters reveal"><label><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar producto..." /></label><div className="category-list">{categories.map((item) => <button className={category === item ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}<span>{item === 'Todos' ? goods.length : goods.filter((product) => product.category === item).length}</span></button>)}</div></aside>
           <div className="product-list">{visibleProducts.map((product, index) => <article className={`product-row reveal delay-${(index % 3) + 1}`} key={product.id}>
             <div className="product-number">{String(index + 1).padStart(2, '0')}</div>
-            <div className="product-image"><Gallery photos={photosOf(product)} alt={product.name} onOpen={() => setDetail(product)} />{product.stock === 0 && <span>Agotado</span>}</div>
-            <div className="product-info"><p className="product-category">{product.category}</p><h3 className="clickable" onClick={() => setDetail(product)}>{product.name}</h3><p>{product.description}</p><div className="stock-line"><span className={product.stock ? '' : 'empty'}>{product.stock ? (product.stock <= 5 ? `¡Quedan ${product.stock}!` : 'Disponible') : 'Sin existencias'}</span></div></div>
-            <div className="product-action"><strong>{product.originalPrice > product.price && <span className="price-was">{money(product.originalPrice)}</span>}{money(product.price)}</strong><button disabled={product.stock === 0} onClick={() => addToCart(product)}>{product.stock ? 'Agregar' : 'Agotado'}<Plus /></button></div>
+            <div className="product-image"><Gallery photos={photosOf(product)} alt={product.name} onOpen={() => setDetail(product)} />{canStock && product.stock === 0 && <span>Agotado</span>}</div>
+            <div className="product-info"><p className="product-category">{product.category}</p><h3 className="clickable" onClick={() => setDetail(product)}>{product.name}</h3><p>{product.description}</p>{canStock && <div className="stock-line"><span className={product.stock ? '' : 'empty'}>{product.stock ? (product.stock <= 5 ? `¡Quedan ${product.stock}!` : 'Disponible') : 'Sin existencias'}</span></div>}</div>
+            <div className="product-action"><strong>{product.originalPrice > product.price && <span className="price-was">{money(product.originalPrice)}</span>}{money(product.price)}</strong>{canCart
+              ? <button disabled={product.stock === 0} onClick={() => addToCart(product)}>{product.stock ? 'Agregar' : 'Agotado'}<Plus /></button>
+              : <button onClick={() => openWa(orderText(product))}>Pedir por WhatsApp<MessageCircle /></button>}</div>
           </article>)}{visibleProducts.length === 0 && <div className="empty-state"><Search /><h3>No encontramos ese producto</h3><p>Prueba otra palabra o categoría.</p></div>}</div>
         </div>
       </section>
@@ -407,7 +424,7 @@ export function Storefront({ data }: Props) {
       <BlockSprig left={LeafBranch} right={LeafBloom} />
       <div className="footer-brand reveal"><BrandMark className="footer-mark" /><p>{copy.footerText}</p></div>
       <div className="reveal delay-1"><span>Conversemos</span><a className="whatsapp" href={`https://wa.me/${whatsapp}`} target="_blank" rel="noreferrer">Escríbenos por WhatsApp <ArrowRight /></a></div>
-      <div className="reveal delay-2"><span>Horario</span><p>{copy.schedule}</p><p className="footer-location">{copy.location}</p>{paymentMethods.length > 0 && <div className="footer-payments"><span>Métodos de pago</span><div className="payment-tags">{paymentMethods.map((method) => <b key={method}>{method}</b>)}</div></div>}</div>
+      <div className="reveal delay-2"><span>Horario</span><p>{copy.schedule}</p><p className="footer-location">{copy.location}</p>{canPayments && paymentMethods.length > 0 && <div className="footer-payments"><span>Métodos de pago</span><div className="payment-tags">{paymentMethods.map((method) => <b key={method}>{method}</b>)}</div></div>}</div>
       <div className="reveal delay-3"><span>Síguenos</span>{handle(copy.instagram) && <a className="social-line" href={`https://instagram.com/${handle(copy.instagram)}`} target="_blank" rel="noreferrer"><Instagram size={16} />@{handle(copy.instagram)}</a>}{handle(copy.tiktok) && <a className="social-line" href={`https://www.tiktok.com/@${handle(copy.tiktok)}`} target="_blank" rel="noreferrer"><Music2 size={16} />@{handle(copy.tiktok)}</a>}</div>
       <div className="footer-bottom reveal">
         <a className="gadr-credit" href="https://gadrnet.com" target="_blank" rel="noopener noreferrer">
@@ -423,6 +440,7 @@ export function Storefront({ data }: Props) {
 
     {whatsapp && <a className="wa-float" href={waHref('Hola ELA, quiero información.')} target="_blank" rel="noreferrer" aria-label="Escríbenos por WhatsApp"><MessageCircle /><span>¿Dudas? Escríbenos</span></a>}
 
+    {canCart && <>
     <div className={`cart-toast ${toastVisible ? 'visible' : ''}`} role="status" aria-live="polite">
       {toast && <><img src={toast.image || PLACEHOLDER} alt="" onError={onImgError} /><div><strong>{toast.title}</strong><span>{toast.name}</span></div><button onClick={() => { setToastVisible(false); setCartOpen(true) }}>Ver bolsa</button></>}
     </div>
@@ -435,6 +453,8 @@ export function Storefront({ data }: Props) {
 
     {checkoutOpen && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}><X /></button>{confirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>PEDIDO RECIBIDO</span><h2>Gracias por confiar en ELA.</h2><p>Tu número de pedido es</p><strong>{confirmation.orderNumber}</strong><p>Total: {money(confirmation.total)}. Te contactaremos por WhatsApp para coordinar pago y entrega. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(confirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}<button className="text-button" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">ÚLTIMO PASO</span><h2>{copy.checkoutTitle}</h2><p>Déjanos tus datos para coordinar pago y entrega.</p><form id="checkout-form" onSubmit={submitOrder}><input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" /><textarea required name="address" placeholder="Dirección de entrega" rows={3} autoComplete="street-address" maxLength={400} />{error && <p className="form-error">{error}</p>}</form></div><div className="order-review"><h3>Resumen</h3>{cart.map((line) => <div key={line.productId}><span>{line.quantity} × {line.name}</span><strong>{money(line.quantity * line.price)}</strong></div>)}<div className="checkout-total"><span>Total</span><strong>{money(subtotal)}</strong></div><button form="checkout-form" disabled={submitting} className="primary-button full">{submitting ? 'Enviando...' : 'Enviar pedido'}<ArrowRight /></button></div></div>}</div></div>}
 
+    </>}
+
     {detail && <div className="modal-wrap" onClick={() => setDetail(null)}><div className="modal-card detail-sheet" onClick={(event) => event.stopPropagation()}>
       <button className="modal-close icon-button" aria-label="Cerrar" onClick={() => setDetail(null)}><X /></button>
       <div className="detail-sheet-gallery"><Gallery photos={photosOf(detail)} alt={detail.name} arrows /></div>
@@ -442,14 +462,18 @@ export function Storefront({ data }: Props) {
         <p className="product-category">{detail.category}</p>
         <h2>{detail.name}</h2>
         <p className="detail-sheet-price">{detail.originalPrice > detail.price && <s>{money(detail.originalPrice)}</s>}{money(detail.price)}</p>
-        {detail.kind === 'servicio' ? <p className="detail-sheet-meta"><Clock size={15} /> {detail.durationMinutes} min</p> : <p className="detail-sheet-meta">{detail.stock ? (detail.stock <= 5 ? `¡Quedan ${detail.stock}!` : 'Disponible') : 'Sin existencias'}</p>}
+        {detail.kind === 'servicio' ? <p className="detail-sheet-meta"><Clock size={15} /> {detail.durationMinutes} min</p> : (canStock && <p className="detail-sheet-meta">{detail.stock ? (detail.stock <= 5 ? `¡Quedan ${detail.stock}!` : 'Disponible') : 'Sin existencias'}</p>)}
         <p className="detail-sheet-desc">{detail.description}</p>
         {detail.kind === 'servicio'
-          ? <button className="primary-button full" onClick={() => { const service = detail; setDetail(null); setBookingService(service); setBookingConfirmation(null); setBookingError('') }}>Agendar cita<Calendar size={18} /></button>
-          : <button className="primary-button full" disabled={detail.stock === 0} onClick={() => addToCart(detail)}>{detail.stock ? 'Agregar a la bolsa' : 'Agotado'}<Plus /></button>}
+          ? (canBook
+            ? <button className="primary-button full" onClick={() => { const service = detail; setDetail(null); setBookingService(service); setBookingConfirmation(null); setBookingError('') }}>Agendar cita<Calendar size={18} /></button>
+            : <a className="primary-button full wa-green" href={waHref(bookText(detail))} target="_blank" rel="noreferrer"><MessageCircle size={18} />Agendar por WhatsApp</a>)
+          : (canCart
+            ? <button className="primary-button full" disabled={detail.stock === 0} onClick={() => addToCart(detail)}>{detail.stock ? 'Agregar a la bolsa' : 'Agotado'}<Plus /></button>
+            : <a className="primary-button full wa-green" href={waHref(orderText(detail))} target="_blank" rel="noreferrer"><MessageCircle size={18} />Pedir por WhatsApp</a>)}
       </div>
     </div></div>}
 
-    {bookingService && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}><X /></button>{bookingConfirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>CITA AGENDADA</span><h2>Te esperamos en ELA.</h2><p>Tu número de cita es</p><strong>{bookingConfirmation.appointmentNumber}</strong><p>Te contactaremos por WhatsApp para confirmar el horario. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(bookingConfirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}<button className="text-button" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">{copy.appointmentTitle}</span><h2>{bookingService.name}</h2><p>{bookingService.description}</p><form id="booking-form" onSubmit={submitBooking}><input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" /><div className="date-time-row"><label className="field-label">Fecha<input required name="date" type="date" min={todayIso} /></label><label className="field-label">Hora<input required name="time" type="time" step={900} /></label></div><textarea name="notes" placeholder="Notas (opcional)" rows={2} maxLength={600} />{bookingError && <p className="form-error">{bookingError}</p>}</form></div><div className="order-review"><h3>Resumen</h3><div><span>{bookingService.name}</span><strong>{money(bookingService.price)}</strong></div><div className="checkout-total"><span>Duración estimada</span><strong>{bookingService.durationMinutes} min</strong></div><button form="booking-form" disabled={bookingSubmitting} className="primary-button full">{bookingSubmitting ? 'Agendando...' : 'Confirmar cita'}<ArrowRight /></button></div></div>}</div></div>}
+    {canBook && bookingService && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}><X /></button>{bookingConfirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>CITA AGENDADA</span><h2>Te esperamos en ELA.</h2><p>Tu número de cita es</p><strong>{bookingConfirmation.appointmentNumber}</strong><p>Te contactaremos por WhatsApp para confirmar el horario. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(bookingConfirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}<button className="text-button" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">{copy.appointmentTitle}</span><h2>{bookingService.name}</h2><p>{bookingService.description}</p><form id="booking-form" onSubmit={submitBooking}><input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" /><div className="date-time-row"><label className="field-label">Fecha<input required name="date" type="date" min={todayIso} /></label><label className="field-label">Hora<input required name="time" type="time" step={900} /></label></div><textarea name="notes" placeholder="Notas (opcional)" rows={2} maxLength={600} />{bookingError && <p className="form-error">{bookingError}</p>}</form></div><div className="order-review"><h3>Resumen</h3><div><span>{bookingService.name}</span><strong>{money(bookingService.price)}</strong></div><div className="checkout-total"><span>Duración estimada</span><strong>{bookingService.durationMinutes} min</strong></div><button form="booking-form" disabled={bookingSubmitting} className="primary-button full">{bookingSubmitting ? 'Agendando...' : 'Confirmar cita'}<ArrowRight /></button></div></div>}</div></div>}
   </div>
 }

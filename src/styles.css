@@ -907,3 +907,26 @@ h3.clickable{cursor:pointer}
 .footer-payments>span{font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.7}
 .payment-tags{display:flex;flex-wrap:wrap;gap:8px}
 .payment-tags b{padding:6px 12px;border:1px solid currentColor;border-radius:99px;font-size:13px;font-weight:600;opacity:.9}
+
+/* ───────── Planes ─────────
+   Barrita de la DEMO (solo sale en modo demo, nunca en la web de un cliente)
+   y avisos de «Disponible en el plan …» con candado en el panel de la demo. */
+.plan-bar{position:fixed;left:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:75;display:flex;flex-direction:column;align-items:flex-start;gap:6px;max-width:calc(100vw - 84px);font:500 11px var(--font-body)}
+.plan-bar-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:6px 12px;background:rgba(43,36,28,.88);color:#f6efe2;border-radius:99px;backdrop-filter:blur(6px);box-shadow:0 6px 18px -8px rgba(20,16,10,.5)}
+.plan-bar-row span{font-weight:600;letter-spacing:.02em}
+.plan-bar-row button,.plan-bar-row a{border:0;background:none;padding:0;color:var(--gold);font:600 11px var(--font-body);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.plan-bar-options{display:flex;gap:6px;padding:6px;background:rgba(43,36,28,.94);border-radius:14px;box-shadow:0 10px 24px -10px rgba(20,16,10,.6)}
+.plan-bar-options button{border:1px solid rgba(246,239,226,.3);background:none;color:#f6efe2;padding:7px 12px;border-radius:99px;font:600 12px var(--font-body);cursor:pointer}
+.plan-bar-options button.active{background:var(--gold);border-color:var(--gold);color:var(--ink)}
+@media(max-width:760px){body:has(.admin-shell) .plan-bar{bottom:calc(72px + env(safe-area-inset-bottom))}}
+.locked-pill{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px dashed var(--line);background:var(--paper);color:var(--muted);font:600 12px var(--font-body);text-align:left}
+.locked-pill svg{width:14px;height:14px;flex:none}
+.locked-card{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:60px 24px;color:var(--muted)}
+.locked-card svg{width:34px;height:34px;color:var(--gold-dark)}
+.locked-card h2{margin:0;font:600 26px var(--font-display);color:var(--ink)}
+.locked-card p{margin:0;max-width:420px;line-height:1.5}
+.locked-card strong{color:var(--gold-dark)}
+.nav-lock{margin-left:auto;opacity:.65;width:14px!important;height:14px!important}
+.tile-menu button .tile-lock{position:absolute;top:6px;right:6px;width:14px;height:14px;opacity:.65}
+
+.card-actions .act small{font-size:9px;font-weight:500;opacity:.75;line-height:1.1}

@@ -5,6 +5,9 @@
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
+    // "demo" = web de muestra (el plan se escoge con ?plan=basico|profesional|completo).
+    // Para una web ya vendida: "basico", "profesional" o "completo" (plan fijo).
+    "PLAN": "demo",
     "GITHUB_BRANCH": "main",
     "GITHUB_UPLOAD_PATH": "public/uploads"
   },

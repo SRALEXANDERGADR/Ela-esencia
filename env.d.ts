@@ -1,5 +1,7 @@
 // Tipado mínimo de las variables/secretos de Cloudflare Workers usados por la app.
 interface Env {
+  // Plan de la web: "demo" (muestra, se escoge con ?plan=), "basico", "profesional" o "completo" (fijo). Sin definir = completo. Ver src/lib/plan.ts.
+  PLAN?: string
   DATABASE_URL: string
   ADMIN_PASSWORD: string
   SESSION_SECRET: string

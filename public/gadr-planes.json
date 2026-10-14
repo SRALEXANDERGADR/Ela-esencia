@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "web": "Ela Esencia",
+  "moneda": "DOP",
+  "planes": [
+    {
+      "id": "basico",
+      "nombre": "Básico",
+      "mensual": 800,
+      "entrada": 1600,
+      "recomendado": false,
+      "resumen": "Para mostrar tus servicios y productos con fotos y precios, y que tus clientas te escriban por WhatsApp.",
+      "incluye": [
+        "Catálogo de servicios y productos con fotos y precios",
+        "Varias fotos por producto o servicio",
+        "Categorías y buscador de productos",
+        "Botón «Pedir por WhatsApp» en cada producto",
+        "Botón «Agendar por WhatsApp» en cada servicio",
+        "Compartir tu tienda por WhatsApp y redes",
+        "Panel sencillo para cambiar servicios, productos, fotos, precios y textos"
+      ],
+      "noIncluye": [
+        "Bolsa de compras en la web",
+        "Citas agendadas en la web",
+        "Pedidos y citas guardados en tu panel",
+        "Facturas y abonos",
+        "Control de cuántas unidades quedan",
+        "Cuentas de ganancias y gastos"
+      ],
+      "demo": "/?plan=basico"
+    },
+    {
+      "id": "profesional",
+      "nombre": "Profesional",
+      "mensual": 1500,
+      "entrada": 3000,
+      "recomendado": true,
+      "resumen": "Para que tu negocio reciba pedidos y citas solo, y tú lleves el control desde tu panel.",
+      "incluye": [
+        "Todo lo del plan Básico",
+        "Bolsa de compras y pedidos en la web",
+        "Tus clientas agendan su cita en la web",
+        "Pedidos y citas guardados en tu panel, con su estado",
+        "Control de cuántas unidades quedan de cada producto",
+        "Métodos de pago visibles en la tienda",
+        "Facturas en PDF y pagos por abonos (pagos parciales)",
+        "Lista de tus clientas con su historial"
+      ],
+      "noIncluye": [
+        "Registro de lo que compras para vender, con su costo",
+        "Ventas hechas por fuera de la web (en persona o por WhatsApp)",
+        "Gastos y cuentas: cuánto ganas y cuánto puedes retirar",
+        "App en tu teléfono que te avisa de cada pedido y cada cita",
+        "Aviso por correo de cada pedido y cada cita",
+        "Papelera para recuperar lo que borraste"
+      ],
+      "demo": "/?plan=profesional"
+    },
+    {
+      "id": "completo",
+      "nombre": "Completo",
+      "mensual": 2500,
+      "entrada": 5000,
+      "recomendado": false,
+      "resumen": "Todo lo que tiene la web: ventas, inventario, cuentas y avisos al teléfono.",
+      "incluye": [
+        "Todo lo del plan Profesional",
+        "Registro de lo que compras para vender, con su costo, y qué se vende primero",
+        "Ventas hechas por fuera de la web (en persona o por WhatsApp)",
+        "Gastos y cuentas: cuánto ganas y cuánto puedes retirar",
+        "App en tu teléfono que te avisa de cada pedido y cada cita",
+        "Aviso por correo de cada pedido y cada cita",
+        "Papelera para recuperar lo que borraste durante 30 días"
+      ],
+      "noIncluye": [],
+      "demo": "/?plan=completo"
+    }
+  ]
+}
