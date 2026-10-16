@@ -1,8 +1,9 @@
 import { HeadContent, Link, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
-import { PlanBar } from '@/components/PlanBar'
+import { GadrDemo } from '@/components/GadrDemo'
 import { getPlanInfo } from '@/lib/store'
 
 import '../styles.css'
+import '../gadr-demo.css'
 
 export const Route = createRootRoute({
   // El servidor lee el plan (variable PLAN, ?plan= o cookie) para que la página
@@ -101,10 +102,10 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   const { plan, demo } = Route.useLoaderData()
-  // La barrita va ANTES del resto para guardar la cookie del plan antes de que
-  // la página pida datos al servidor.
+  // La barra de la demo va ANTES del resto para guardar la cookie del plan antes
+  // de que la página pida datos al servidor. Solo sale con PLAN = "demo".
   return <>
-    <PlanBar plan={plan} demo={demo} />
+    <GadrDemo plan={plan} demo={demo} web="Ela Esencia" />
     <Outlet />
   </>
 }
