@@ -31,6 +31,9 @@ export const FUNCIONES = {
   app: 'completo', //            App «ELA Admin» con notificaciones
   correo: 'completo', //         Avisos por correo
   papelera: 'completo', //       Papelera (restaurar lo borrado)
+  historial: 'completo', //      «Mis citas y pedidos»: la clienta sigue, cambia o cancela lo suyo
+  enviarAmiga: 'completo', //    «Enviar a una amiga»: enlace /catalogo/<id> con foto y precio
+  retoque: 'completo', //        Días de retoque gratis (servicios) y de cambio (productos)
 } as const satisfies Record<string, Plan>
 
 export type Funcion = keyof typeof FUNCIONES
@@ -54,4 +57,5 @@ export const CLAVES_POR_FUNCION: Record<string, Funcion> = {
   cartTitle: 'carrito',
   checkoutTitle: 'carrito',
   appointmentTitle: 'citas',
+  guaranteeTerms: 'retoque',
 }

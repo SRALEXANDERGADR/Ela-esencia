@@ -28,6 +28,9 @@
         "Facturas en PDF y abonos",
         "Lista de clientas con su historial",
         "Métodos de pago visibles en la tienda",
+        "«Mis citas y pedidos»: tus clientas ven cómo va todo y cambian la fecha de su cita",
+        "Botón «Enviar a una amiga» con el enlace de cada servicio y producto",
+        "Retoque gratis en servicios y días para cambio en productos",
         "Compras por lotes con su costo: sabes cuánto ganas en cada venta",
         "Ventas hechas por fuera de la web",
         "Finanzas: ganancia, dinero del negocio y dinero para reinvertir",
@@ -63,6 +66,9 @@
         "Métodos de pago visibles en la tienda"
       ],
       "noIncluye": [
+        "«Mis citas y pedidos»: tus clientas ven cómo va todo y cambian la fecha de su cita",
+        "Botón «Enviar a una amiga» con el enlace de cada servicio y producto",
+        "Retoque gratis en servicios y días para cambio en productos",
         "Compras por lotes con su costo: sabes cuánto ganas en cada venta",
         "Ventas hechas por fuera de la web",
         "Finanzas: ganancia, dinero del negocio y dinero para reinvertir",
@@ -80,7 +86,7 @@
       "entrada": 2000,
       "recomendado": false,
       "lema": "Todo tu negocio en un solo lugar",
-      "resumen": "Además de vender, sabes cuánto ganas, controlas tu inventario y tu teléfono te avisa de cada pedido.",
+      "resumen": "Además de vender, tus clientas siguen y cambian sus citas desde la web, sabes cuánto ganas y tu teléfono te avisa de cada pedido.",
       "incluye": [
         "Catálogo de productos y servicios con fotos y precios",
         "Varias fotos por artículo",
@@ -96,6 +102,9 @@
         "Facturas en PDF y abonos",
         "Lista de clientas con su historial",
         "Métodos de pago visibles en la tienda",
+        "«Mis citas y pedidos»: tus clientas ven cómo va todo y cambian la fecha de su cita",
+        "Botón «Enviar a una amiga» con el enlace de cada servicio y producto",
+        "Retoque gratis en servicios y días para cambio en productos",
         "Compras por lotes con su costo: sabes cuánto ganas en cada venta",
         "Ventas hechas por fuera de la web",
         "Finanzas: ganancia, dinero del negocio y dinero para reinvertir",

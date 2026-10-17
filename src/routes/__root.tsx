@@ -52,14 +52,6 @@ export const Route = createRootRoute({
         content: 'https://elaesencia.gadrnet.workers.dev/og-cover.jpg',
       },
       {
-        property: 'og:image:width',
-        content: '1200',
-      },
-      {
-        property: 'og:image:height',
-        content: '630',
-      },
-      {
         property: 'og:image:alt',
         content: 'ELA — La belleza de ser tú.',
       },

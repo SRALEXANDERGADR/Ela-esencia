@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from '@tanstack/react-router'
-import { ArrowRight, Calendar, Check, ChevronLeft, ChevronRight, Clock, Instagram, Menu, MessageCircle, Minus, Music2, Plus, Scissors, Search, ShoppingBag, Sparkles, Trash2, X } from 'lucide-react'
-import { createAppointment, createOrder, type CartLine } from '@/lib/store'
+import { Link, useRouter } from '@tanstack/react-router'
+import { ArrowRight, Calendar, CalendarHeart, Check, ChevronLeft, ChevronRight, Clock, Instagram, Menu, MessageCircle, Minus, Music2, Plus, RotateCw, Scissors, Search, Send, ShoppingBag, Sparkles, Trash2, X } from 'lucide-react'
+import { cancelMyAppointment, cancelMyOrder, createAppointment, createOrder, getMyHistory, moveMyAppointment, type CartLine } from '@/lib/store'
 import { ShareButton } from './ShareButton'
 import { formatMoney } from '@/lib/money'
 import { puede, type Plan } from '@/lib/plan'
@@ -42,8 +42,8 @@ function useLeafParallax() {
   return refs
 }
 
-type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; stock: number; durationMinutes: number; image: string; images?: string[]; featured: boolean }
-type Props = { data: { products: Product[]; content: Record<string, string>; plan?: Plan } }
+type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; stock: number; durationMinutes: number; image: string; images?: string[]; featured: boolean; guaranteeDays?: number }
+type Props = { data: { products: Product[]; content: Record<string, string>; plan?: Plan }; initialDetailId?: number }
 
 const money = formatMoney
 const CART_KEY = 'ela-cart'
@@ -53,6 +53,95 @@ const waNumber = (value: string) => (value || '').replace(/\D/g, '')
 // Fecha local (no UTC), para que después de las 8 p. m. no salga mañana.
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 const prettyDate = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return y ? new Intl.DateTimeFormat('es-DO', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(y, m - 1, d)) : iso }
+// ─── Mis citas y pedidos (plan Completo) ───
+// El teléfono guarda el número y la clave secreta de cada cita y pedido, y
+// los datos de la clienta para no escribirlos otra vez.
+const HISTORY_KEY = 'ela-mis-citas-pedidos'
+const CLIENT_KEY = 'ela-clienta'
+type HistoryKey = { number: string; token: string }
+type HistoryKeys = { orders: HistoryKey[]; appointments: HistoryKey[] }
+type SavedClient = { name: string; phone: string; email: string; address: string }
+type History = Awaited<ReturnType<typeof getMyHistory>>
+type MyOrder = History['orders'][number]
+type MyAppointment = History['appointments'][number]
+const validKeys = (list: unknown): HistoryKey[] => (Array.isArray(list) ? list : []).filter((item) => item && typeof item.number === 'string' && typeof item.token === 'string' && item.token.length >= 32).slice(0, 30)
+function readHistoryKeys(): HistoryKeys {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}')
+    return { orders: validKeys(parsed?.orders), appointments: validKeys(parsed?.appointments) }
+  } catch { return { orders: [], appointments: [] } }
+}
+function saveHistoryKey(kind: keyof HistoryKeys, key: HistoryKey) {
+  const keys = readHistoryKeys()
+  keys[kind] = [key, ...keys[kind].filter((item) => item.number !== key.number)].slice(0, 30)
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(keys)) } catch { /* sin almacenamiento */ }
+}
+function readClient(): SavedClient | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CLIENT_KEY) || 'null')
+    return parsed && typeof parsed.name === 'string' ? { name: parsed.name, phone: String(parsed.phone || ''), email: String(parsed.email || ''), address: String(parsed.address || '') } : null
+  } catch { return null }
+}
+function saveClient(client: Partial<SavedClient>) {
+  const merged = { ...(readClient() ?? { name: '', phone: '', email: '', address: '' }), ...Object.fromEntries(Object.entries(client).filter(([, value]) => value)) }
+  try { localStorage.setItem(CLIENT_KEY, JSON.stringify(merged)) } catch { /* sin almacenamiento */ }
+  return merged as SavedClient
+}
+const daysText = (days: number) => `${days} ${days === 1 ? 'día' : 'días'}`
+/** Fecha de la cita + días de retoque → «8 de noviembre». */
+const plusDays = (iso: string, days: number) => { const [y, m, d] = iso.split('-').map(Number); return y ? new Intl.DateTimeFormat('es-DO', { day: 'numeric', month: 'long' }).format(new Date(y, m - 1, d + days)) : '' }
+const shortDay = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); const date = new Date(y, (m || 1) - 1, d || 1); return { day: String(d || ''), month: new Intl.DateTimeFormat('es-DO', { month: 'short' }).format(date).replace('.', ''), weekday: new Intl.DateTimeFormat('es-DO', { weekday: 'long' }).format(date) } }
+const prettyTime = (time: string) => { const [h, min] = time.split(':').map(Number); return Number.isNaN(h) ? time : `${((h + 11) % 12) + 1}:${String(min || 0).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}` }
+const ORDER_STEPS = ['Recibido', 'En preparación', 'En camino', 'Entregado']
+const ORDER_STEP: Record<string, number> = { Pendiente: 0, Preparando: 1, Enviado: 2, Entregado: 3 }
+const VISIT_STEPS = ['Solicitada', 'Confirmada', 'Realizada']
+const VISIT_STEP: Record<string, number> = { Pendiente: 0, Confirmada: 1, Completada: 2 }
+
+/** Pasos de una cita o pedido, en línea vertical con puntos dorados. */
+function Steps({ steps, current }: { steps: string[]; current: number }) {
+  return <ol className="history-steps">{steps.map((label, index) => <li key={label} className={index < current ? 'done' : index === current ? 'now' : ''}><i />{label}</li>)}</ol>
+}
+
+function VisitCard({ visit, busy, whatsappLink, onMove, onCancel }: { visit: MyAppointment; busy: boolean; whatsappLink: string; onMove: (visit: MyAppointment, date: string, time: string) => Promise<boolean>; onCancel: (visit: MyAppointment) => void }) {
+  const [mode, setMode] = useState<'' | 'mover' | 'cancelar'>('')
+  const [date, setDate] = useState(visit.date)
+  const [time, setTime] = useState(visit.time)
+  const cancelled = visit.status === 'Cancelada'
+  const day = shortDay(visit.date)
+  return <article className={`history-card ${cancelled ? 'is-cancelled' : ''}`}>
+    <div className="history-visit-top">
+      <div className="history-date"><b>{day.day}</b><span>{day.month}</span></div>
+      <div><span className="history-kicker">{visit.number}</span><h3>{visit.serviceName}</h3><p>{day.weekday} · {prettyTime(visit.time)} · {money(visit.price)}</p></div>
+    </div>
+    {cancelled ? <p className="history-cancelled">Esta cita se canceló.</p> : <Steps steps={VISIT_STEPS} current={VISIT_STEP[visit.status] ?? 0} />}
+    {!cancelled && visit.guaranteeDays > 0 && <p className="history-perk"><Sparkles size={14} />Retoque gratis hasta el {plusDays(visit.date, visit.guaranteeDays)}</p>}
+    {mode === 'mover' && <div className="history-move">
+      <div className="date-time-row"><label className="field-label">Nueva fecha<input type="date" min={localToday()} value={date} onChange={(event) => setDate(event.target.value)} /></label><label className="field-label">Hora<input type="time" step={900} value={time} onChange={(event) => setTime(event.target.value)} /></label></div>
+      <div className="history-buttons"><button type="button" className="primary-button" disabled={busy || !date || !time} onClick={async () => { if (await onMove(visit, date, time)) setMode('') }}>{busy ? 'Guardando…' : 'Guardar nueva fecha'}</button><button type="button" className="text-button" disabled={busy} onClick={() => setMode('')}>No cambiar</button></div>
+    </div>}
+    {mode === 'cancelar' && <div className="history-confirm"><p>¿Cancelar tu cita de {visit.serviceName} del {day.weekday} {day.day} de {day.month}?</p><div className="history-buttons"><button type="button" className="primary-button" disabled={busy} onClick={() => onCancel(visit)}>{busy ? 'Un momento…' : 'Sí, cancelar'}</button><button type="button" className="text-button" disabled={busy} onClick={() => setMode('')}>No</button></div></div>}
+    {!mode && (visit.canMove || visit.canCancel) && <div className="history-actions">
+      {visit.canMove && <button type="button" className="history-action" onClick={() => setMode('mover')}><Calendar size={15} />Cambiar fecha</button>}
+      {visit.canCancel && <button type="button" className="history-link" onClick={() => setMode('cancelar')}>Cancelar cita</button>}
+    </div>}
+    {whatsappLink && <a className="history-wa" href={whatsappLink} target="_blank" rel="noreferrer"><MessageCircle size={14} />Escribir sobre esta cita</a>}
+  </article>
+}
+
+function OrderCard({ order, busy, whatsappLink, onChange }: { order: MyOrder; busy: boolean; whatsappLink: string; onChange: (order: MyOrder, refill: boolean) => void }) {
+  const [mode, setMode] = useState<'' | 'cambiar' | 'cancelar'>('')
+  const cancelled = order.status === 'Cancelado'
+  const units = order.items.reduce((sum, item) => sum + item.quantity, 0)
+  return <article className={`history-card ${cancelled ? 'is-cancelled' : ''}`}>
+    <div className="history-order-top"><div><span className="history-kicker">{order.number}</span><h3>{units} {units === 1 ? 'artículo' : 'artículos'} · {money(order.total)}</h3><p>{new Intl.DateTimeFormat('es-DO', { day: 'numeric', month: 'long' }).format(new Date(order.createdAt))}</p></div>{!cancelled && <span className={`history-pay ${order.paymentStatus === 'Pagado' ? 'paid' : ''}`}>{order.paymentStatus === 'Pagado' ? 'Pagado' : 'Por pagar'}</span>}</div>
+    {cancelled ? <p className="history-cancelled">Este pedido se canceló.</p> : <Steps steps={ORDER_STEPS} current={ORDER_STEP[order.status] ?? 0} />}
+    <ul className="history-items">{order.items.map((item, index) => <li key={`${item.productId}-${index}`}><img src={item.image || PLACEHOLDER} alt="" onError={onImgError} /><div><span>{item.quantity} × {item.name}</span>{item.guaranteeDays > 0 && <small>Cambio hasta {daysText(item.guaranteeDays)} después de recibirlo</small>}</div><b>{money(item.price * item.quantity)}</b></li>)}</ul>
+    {mode && <div className="history-confirm"><p>{mode === 'cambiar' ? 'Tu pedido se cancela y lo que tenía vuelve a tu bolsa. Ahí cambias lo que quieras y lo envías otra vez.' : `¿Cancelar el pedido ${order.number}?`}</p><div className="history-buttons"><button type="button" className="primary-button" disabled={busy} onClick={() => onChange(order, mode === 'cambiar')}>{busy ? 'Un momento…' : mode === 'cambiar' ? 'Sí, cambiarlo' : 'Sí, cancelar'}</button><button type="button" className="text-button" disabled={busy} onClick={() => setMode('')}>No</button></div></div>}
+    {!mode && order.canChange && <div className="history-actions"><button type="button" className="history-action" onClick={() => setMode('cambiar')}><ShoppingBag size={15} />Cambiar pedido</button><button type="button" className="history-link" onClick={() => setMode('cancelar')}>Cancelar pedido</button></div>}
+    {whatsappLink && <a className="history-wa" href={whatsappLink} target="_blank" rel="noreferrer"><MessageCircle size={14} />Escribir sobre este pedido</a>}
+  </article>
+}
+
 /** Si una foto no carga (enlace roto), muestra la imagen de respaldo. */
 const onImgError = (event: React.SyntheticEvent<HTMLImageElement>) => { const img = event.currentTarget; if (!img.src.endsWith(PLACEHOLDER)) img.src = PLACEHOLDER }
 
@@ -161,8 +250,9 @@ function useScrollReveal(deps: unknown[]) {
   }, deps)
 }
 
-export function Storefront({ data }: Props) {
+export function Storefront({ data, initialDetailId }: Props) {
   const { products, content: copy } = data
+  const router = useRouter()
   // Qué trae el plan (ver src/lib/plan.ts). Lo que el plan no incluye NO sale:
   // sin botones muertos. Sin plan definido = completo.
   const plan: Plan = data.plan ?? 'completo'
@@ -170,6 +260,10 @@ export function Storefront({ data }: Props) {
   const canBook = puede(plan, 'citas')
   const canStock = puede(plan, 'existencia')
   const canPayments = puede(plan, 'metodosPago')
+  // Plan Completo: «Mis citas y pedidos», «Enviar a una amiga» y retoque.
+  const canHistory = puede(plan, 'historial') && (canCart || canBook)
+  const canSend = puede(plan, 'enviarAmiga')
+  const canPerk = puede(plan, 'retoque')
   const services = useMemo(() => products.filter((p) => p.kind === 'servicio'), [products])
   const goods = useMemo(() => products.filter((p) => p.kind === 'producto'), [products])
 
@@ -188,6 +282,41 @@ export function Storefront({ data }: Props) {
   const cartLoaded = useRef(false)
   // Ficha grande de un producto o servicio (galería, descripción y botón).
   const [detail, setDetail] = useState<Product | null>(null)
+
+  // Mis citas y pedidos
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyTab, setHistoryTab] = useState<'citas' | 'pedidos'>('citas')
+  const [historyCount, setHistoryCount] = useState({ orders: 0, appointments: 0 })
+  const [history, setHistory] = useState<History>({ orders: [], appointments: [] })
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
+  const [historyBusy, setHistoryBusy] = useState('')
+  const [client, setClient] = useState<SavedClient | null>(null)
+  useEffect(() => {
+    if (!canHistory) return
+    const keys = readHistoryKeys()
+    setHistoryCount({ orders: keys.orders.length, appointments: keys.appointments.length })
+    setClient(readClient())
+  }, [canHistory])
+  const historyTotal = historyCount.orders + historyCount.appointments
+
+  // Enlace de un artículo (/catalogo/<id>): su ficha se abre sola. Al
+  // cerrarla, la dirección vuelve a la de la tienda.
+  const fromLink = useRef(false)
+  useEffect(() => {
+    const product = initialDetailId ? products.find((item) => item.id === initialDetailId) : undefined
+    if (product) setDetail(product)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDetailId])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onLink = window.location.pathname.startsWith('/catalogo/')
+    if (detail) { if (onLink) fromLink.current = true; return }
+    if (fromLink.current && onLink) {
+      fromLink.current = false
+      window.history.replaceState(window.history.state, '', `/${window.location.search}`)
+    }
+  }, [detail])
 
   // La bolsa se guarda en este teléfono: si la clienta cierra la página,
   // al volver sigue ahí. Se ajusta a las unidades que haya hoy.
@@ -211,12 +340,12 @@ export function Storefront({ data }: Props) {
 
   // Con un menú, la bolsa o una ventana abierta, la página de atrás no se
   // mueve, y la tecla Escape los cierra.
-  const anyOverlay = menuOpen || cartOpen || checkoutOpen || Boolean(bookingService) || Boolean(detail)
+  const anyOverlay = menuOpen || cartOpen || checkoutOpen || historyOpen || Boolean(bookingService) || Boolean(detail)
   useEffect(() => {
     if (!anyOverlay) return
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMenuOpen(false); setCartOpen(false); setCheckoutOpen(false); setConfirmation(null); setBookingService(null); setBookingConfirmation(null); setDetail(null) } }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMenuOpen(false); setCartOpen(false); setCheckoutOpen(false); setHistoryOpen(false); setConfirmation(null); setBookingService(null); setBookingConfirmation(null); setDetail(null) } }
     window.addEventListener('keydown', onKey)
     return () => { document.body.style.overflow = previous; window.removeEventListener('keydown', onKey) }
   }, [anyOverlay])
@@ -272,6 +401,11 @@ export function Storefront({ data }: Props) {
       const summary = [`Hola, soy ${name}. Acabo de hacer el pedido ${result.orderNumber} en la web:`, ...cart.map((line) => `• ${line.quantity} × ${line.name}`), `Total: ${money(result.total)}`].join('\n')
       setConfirmation({ ...result, summary })
       setCart([])
+      if (canHistory && result.token) {
+        saveHistoryKey('orders', { number: result.orderNumber, token: result.token })
+        setClient(saveClient({ name, phone: String(form.get('phone') || ''), email: String(form.get('email') || ''), address: String(form.get('address') || '') }))
+        setHistoryCount((current) => ({ ...current, orders: readHistoryKeys().orders.length }))
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No pudimos enviar el pedido.')
     } finally {
@@ -292,10 +426,92 @@ export function Storefront({ data }: Props) {
       const result = await createAppointment({ data: { name, phone: String(form.get('phone')), email: String(form.get('email')), serviceId: bookingService.id, date, time, notes: String(form.get('notes') || '') } })
       const summary = `Hola, soy ${name}. Acabo de agendar la cita ${result.appointmentNumber} en la web: ${bookingService.name}, el ${prettyDate(date)} a las ${time}.`
       setBookingConfirmation({ ...result, summary })
+      if (canHistory && result.token) {
+        saveHistoryKey('appointments', { number: result.appointmentNumber, token: result.token })
+        setClient(saveClient({ name, phone: String(form.get('phone') || ''), email: String(form.get('email') || '') }))
+        setHistoryCount((current) => ({ ...current, appointments: readHistoryKeys().appointments.length }))
+      }
     } catch (caught) {
       setBookingError(caught instanceof Error ? caught.message : 'No pudimos agendar la cita.')
     } finally {
       setBookingSubmitting(false)
+    }
+  }
+
+  async function loadHistory() {
+    const keys = readHistoryKeys()
+    setHistoryCount({ orders: keys.orders.length, appointments: keys.appointments.length })
+    if (!keys.orders.length && !keys.appointments.length) { setHistory({ orders: [], appointments: [] }); return }
+    setHistoryLoading(true)
+    setHistoryError('')
+    try { setHistory(await getMyHistory({ data: keys })) } catch { setHistoryError('No pudimos cargar tus citas y pedidos. Revisa tu conexión e inténtalo otra vez.') } finally { setHistoryLoading(false) }
+  }
+  function openHistory(tab?: 'citas' | 'pedidos') {
+    const keys = readHistoryKeys()
+    setHistoryTab(tab ?? (keys.appointments.length || !keys.orders.length ? 'citas' : 'pedidos'))
+    setMenuOpen(false); setCheckoutOpen(false); setConfirmation(null); setBookingService(null); setBookingConfirmation(null)
+    setHistoryOpen(true)
+    void loadHistory()
+  }
+  const keyFor = (kind: keyof HistoryKeys, number: string) => readHistoryKeys()[kind].find((item) => item.number === number)
+  async function historyAction(id: string, action: () => Promise<unknown>) {
+    setHistoryBusy(id)
+    setHistoryError('')
+    try { await action(); await loadHistory(); return true } catch (caught) { setHistoryError(caught instanceof Error ? caught.message : 'No pudimos hacer el cambio.'); return false } finally { setHistoryBusy('') }
+  }
+  const moveVisit = (visit: MyAppointment, date: string, time: string) => {
+    const key = keyFor('appointments', visit.number)
+    return key ? historyAction(visit.number, () => moveMyAppointment({ data: { ...key, date, time } })) : Promise.resolve(false)
+  }
+  const cancelVisit = (visit: MyAppointment) => {
+    const key = keyFor('appointments', visit.number)
+    if (key) void historyAction(visit.number, () => cancelMyAppointment({ data: key }))
+  }
+  /** Cancela el pedido (si sigue pendiente). Con `refill`, lo que tenía vuelve
+   * a la bolsa para cambiarlo y enviarlo otra vez. */
+  const changeOrder = (order: MyOrder, refill: boolean) => {
+    const key = keyFor('orders', order.number)
+    if (!key) return
+    void historyAction(order.number, async () => {
+      const result = await cancelMyOrder({ data: key })
+      if (refill) {
+        // Las unidades acaban de volver: se cuentan como disponibles aunque la
+        // página todavía muestre la existencia de antes.
+        setCart((current) => {
+          const next = [...current]
+          for (const item of result.items) {
+            const product = goods.find((entry) => entry.id === item.productId)
+            if (!product) continue
+            const at = next.findIndex((line) => line.productId === product.id)
+            const room = product.stock + item.quantity - (at >= 0 ? next[at].quantity : 0)
+            const quantity = Math.min(item.quantity, room)
+            if (quantity <= 0) continue
+            if (at >= 0) next[at] = { ...next[at], quantity: next[at].quantity + quantity }
+            else next.push({ productId: product.id, name: product.name, price: product.price, quantity, image: product.image })
+          }
+          return next
+        })
+        setHistoryOpen(false)
+        setCartOpen(true)
+      }
+      void router.invalidate() // la existencia de la tienda se pone al día
+    })
+  }
+
+  /** «Enviar a una amiga»: comparte el enlace del artículo (menú de compartir
+   * del teléfono o, si no hay, copia el enlace). */
+  async function sendToFriend(product: Product) {
+    const url = `${window.location.origin}/catalogo/${product.id}`
+    const text = `Mira esto de ${copy.brandName || 'ELA'}: ${product.name} · ${money(product.price)}`
+    const nav = navigator as Navigator & { share?: (data: ShareData) => Promise<void> }
+    if (nav.share) {
+      try { await nav.share({ title: product.name, text, url }); return } catch (caught) { if ((caught as Error)?.name === 'AbortError') return }
+    }
+    try {
+      await navigator.clipboard.writeText(url)
+      showToast({ title: 'Enlace copiado', name: 'Pégalo en WhatsApp para enviárselo a tu amiga', image: product.image })
+    } catch {
+      window.prompt('Copia este enlace:', url)
     }
   }
 
@@ -341,6 +557,7 @@ export function Storefront({ data }: Props) {
       <a className="wordmark" href="#inicio"><BrandMark /></a>
       <nav className="desktop-nav"><a href="#servicios">{copy.navServices}</a><a href="#catalogo">{copy.navCatalog}</a><a href="#beneficios">{copy.navBenefits}</a><a href="#contacto">{copy.navContact}</a></nav>
       <div className="topbar-actions">
+        {canHistory && historyTotal > 0 && <button className="history-button" onClick={() => openHistory()} aria-label="Mis citas y pedidos"><CalendarHeart size={19} /><span>Mis citas</span></button>}
         {canCart && <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`Abrir bolsa (${cartCount})`}><ShoppingBag size={19} /><span>Bolsa</span><b className={cartCount ? 'has-items' : ''}>{cartCount}</b></button>}
       </div>
     </header>
@@ -356,6 +573,7 @@ export function Storefront({ data }: Props) {
       <a href="#contacto" onClick={() => setMenuOpen(false)}>{copy.navContact} <ArrowRight /></a>
       <Link to="/politicas" onClick={() => setMenuOpen(false)}>Políticas <ArrowRight /></Link>
       <Link to="/terminos" onClick={() => setMenuOpen(false)}>Términos y condiciones <ArrowRight /></Link>
+      {canHistory && historyTotal > 0 && <button type="button" className="drawer-history" onClick={() => openHistory()}><span><CalendarHeart size={18} />Mis citas y pedidos</span><b>{historyTotal}</b></button>}
       <div className="drawer-admin"><span>Área privada</span><Link to="/admin">Entrar al panel administrativo</Link></div>
     </aside>
 
@@ -385,7 +603,8 @@ export function Storefront({ data }: Props) {
               <p className="product-category">{service.category}</p>
               <h3>{service.name}</h3>
               <p>{service.description}</p>
-              <div className="service-meta"><span><Clock size={14} />{service.durationMinutes} min</span></div>
+              <div className="service-meta"><span><Clock size={14} />{service.durationMinutes} min</span>{canPerk && (service.guaranteeDays ?? 0) > 0 && <span className="perk-chip"><Sparkles size={13} />Retoque gratis · {daysText(service.guaranteeDays ?? 0)}</span>}</div>
+              {canSend && <button type="button" className="friend-link" onClick={() => void sendToFriend(service)}><Send size={12} />Enviar a una amiga</button>}
               <div className="product-action"><strong>{service.originalPrice > service.price && <span className="price-was">{money(service.originalPrice)}</span>}{money(service.price)}</strong>{canBook
               ? <button onClick={() => { setBookingService(service); setBookingConfirmation(null); setBookingError('') }}>Agendar cita<Calendar size={16} /></button>
               : <button onClick={() => openWa(bookText(service))}>Agendar por WhatsApp<MessageCircle size={16} /></button>}</div>
@@ -403,7 +622,7 @@ export function Storefront({ data }: Props) {
           <div className="product-list">{visibleProducts.map((product, index) => <article className={`product-row reveal delay-${(index % 3) + 1}`} key={product.id}>
             <div className="product-number">{String(index + 1).padStart(2, '0')}</div>
             <div className="product-image"><Gallery photos={photosOf(product)} alt={product.name} onOpen={() => setDetail(product)} />{canStock && product.stock === 0 && <span>Agotado</span>}</div>
-            <div className="product-info"><p className="product-category">{product.category}</p><h3 className="clickable" onClick={() => setDetail(product)}>{product.name}</h3><p>{product.description}</p>{canStock && <div className="stock-line"><span className={product.stock ? '' : 'empty'}>{product.stock ? (product.stock <= 5 ? `¡Quedan ${product.stock}!` : 'Disponible') : 'Sin existencias'}</span></div>}</div>
+            <div className="product-info"><p className="product-category">{product.category}</p><h3 className="clickable" onClick={() => setDetail(product)}>{product.name}</h3><p>{product.description}</p>{canStock && <div className="stock-line"><span className={product.stock ? '' : 'empty'}>{product.stock ? (product.stock <= 5 ? `¡Quedan ${product.stock}!` : 'Disponible') : 'Sin existencias'}</span></div>}{canSend && <button type="button" className="friend-link" onClick={() => void sendToFriend(product)}><Send size={12} />Enviar a una amiga</button>}</div>
             <div className="product-action"><strong>{product.originalPrice > product.price && <span className="price-was">{money(product.originalPrice)}</span>}{money(product.price)}</strong>{canCart
               ? <button disabled={product.stock === 0} onClick={() => addToCart(product)}>{product.stock ? 'Agregar' : 'Agotado'}<Plus /></button>
               : <button onClick={() => openWa(orderText(product))}>Pedir por WhatsApp<MessageCircle /></button>}</div>
@@ -440,10 +659,11 @@ export function Storefront({ data }: Props) {
 
     {whatsapp && <a className="wa-float" href={waHref('Hola ELA, quiero información.')} target="_blank" rel="noreferrer" aria-label="Escríbenos por WhatsApp"><MessageCircle /><span>¿Dudas? Escríbenos</span></a>}
 
-    {canCart && <>
     <div className={`cart-toast ${toastVisible ? 'visible' : ''}`} role="status" aria-live="polite">
-      {toast && <><img src={toast.image || PLACEHOLDER} alt="" onError={onImgError} /><div><strong>{toast.title}</strong><span>{toast.name}</span></div><button onClick={() => { setToastVisible(false); setCartOpen(true) }}>Ver bolsa</button></>}
+      {toast && <><img src={toast.image || PLACEHOLDER} alt="" onError={onImgError} /><div><strong>{toast.title}</strong><span>{toast.name}</span></div>{canCart && <button onClick={() => { setToastVisible(false); setCartOpen(true) }}>Ver bolsa</button>}</>}
     </div>
+
+    {canCart && <>
 
     <div className={`overlay ${cartOpen ? 'visible' : ''}`} onClick={() => setCartOpen(false)} />
     <aside className={`cart-drawer ${cartOpen ? 'open' : ''}`}><div className="drawer-head"><div><span className="drawer-kicker">BOLSA · {cartCount} PIEZAS</span><h2>{copy.cartTitle}</h2></div><button className="icon-button" onClick={() => setCartOpen(false)} aria-label="Cerrar bolsa"><X /></button></div>
@@ -451,7 +671,7 @@ export function Storefront({ data }: Props) {
       <div className="cart-summary"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><p>La entrega se coordina después de confirmar el pedido.</p><button className="primary-button full" disabled={!cart.length} onClick={() => { setCartOpen(false); setCheckoutOpen(true) }}>Continuar al checkout <ArrowRight /></button></div>
     </aside>
 
-    {checkoutOpen && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}><X /></button>{confirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>PEDIDO RECIBIDO</span><h2>Gracias por confiar en ELA.</h2><p>Tu número de pedido es</p><strong>{confirmation.orderNumber}</strong><p>Total: {money(confirmation.total)}. Te contactaremos por WhatsApp para coordinar pago y entrega. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(confirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}<button className="text-button" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">ÚLTIMO PASO</span><h2>{copy.checkoutTitle}</h2><p>Déjanos tus datos para coordinar pago y entrega.</p><form id="checkout-form" onSubmit={submitOrder}><input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" /><textarea required name="address" placeholder="Dirección de entrega" rows={3} autoComplete="street-address" maxLength={400} />{error && <p className="form-error">{error}</p>}</form></div><div className="order-review"><h3>Resumen</h3>{cart.map((line) => <div key={line.productId}><span>{line.quantity} × {line.name}</span><strong>{money(line.quantity * line.price)}</strong></div>)}<div className="checkout-total"><span>Total</span><strong>{money(subtotal)}</strong></div><button form="checkout-form" disabled={submitting} className="primary-button full">{submitting ? 'Enviando...' : 'Enviar pedido'}<ArrowRight /></button></div></div>}</div></div>}
+    {checkoutOpen && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}><X /></button>{confirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>PEDIDO RECIBIDO</span><h2>Gracias por confiar en ELA.</h2><p>Tu número de pedido es</p><strong>{confirmation.orderNumber}</strong><p>Total: {money(confirmation.total)}. Te contactaremos por WhatsApp para coordinar pago y entrega. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(confirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}{canHistory && <button className="history-cta" onClick={() => openHistory('pedidos')}><CalendarHeart size={16} />Ver mis citas y pedidos</button>}<button className="text-button" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">ÚLTIMO PASO</span><h2>{copy.checkoutTitle}</h2><p>Déjanos tus datos para coordinar pago y entrega.</p><form id="checkout-form" onSubmit={submitOrder}>{canHistory && client && <p className="saved-client">Usamos tus datos de la última vez. Cámbialos si hace falta.</p>}<input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} defaultValue={canHistory ? client?.name : undefined} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} defaultValue={canHistory ? client?.phone : undefined} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" defaultValue={canHistory ? client?.email : undefined} /><textarea required name="address" placeholder="Dirección de entrega" rows={3} autoComplete="street-address" maxLength={400} defaultValue={canHistory ? client?.address : undefined} />{error && <p className="form-error">{error}</p>}</form></div><div className="order-review"><h3>Resumen</h3>{cart.map((line) => <div key={line.productId}><span>{line.quantity} × {line.name}</span><strong>{money(line.quantity * line.price)}</strong></div>)}<div className="checkout-total"><span>Total</span><strong>{money(subtotal)}</strong></div><button form="checkout-form" disabled={submitting} className="primary-button full">{submitting ? 'Enviando...' : 'Enviar pedido'}<ArrowRight /></button></div></div>}</div></div>}
 
     </>}
 
@@ -464,6 +684,7 @@ export function Storefront({ data }: Props) {
         <p className="detail-sheet-price">{detail.originalPrice > detail.price && <s>{money(detail.originalPrice)}</s>}{money(detail.price)}</p>
         {detail.kind === 'servicio' ? <p className="detail-sheet-meta"><Clock size={15} /> {detail.durationMinutes} min</p> : (canStock && <p className="detail-sheet-meta">{detail.stock ? (detail.stock <= 5 ? `¡Quedan ${detail.stock}!` : 'Disponible') : 'Sin existencias'}</p>)}
         <p className="detail-sheet-desc">{detail.description}</p>
+        {canPerk && (detail.guaranteeDays ?? 0) > 0 && <p className="detail-perk"><Sparkles size={15} />{detail.kind === 'servicio' ? `Retoque gratis hasta ${daysText(detail.guaranteeDays ?? 0)} después de tu cita` : `Cambio hasta ${daysText(detail.guaranteeDays ?? 0)} después de recibirlo`}</p>}
         {detail.kind === 'servicio'
           ? (canBook
             ? <button className="primary-button full" onClick={() => { const service = detail; setDetail(null); setBookingService(service); setBookingConfirmation(null); setBookingError('') }}>Agendar cita<Calendar size={18} /></button>
@@ -471,9 +692,27 @@ export function Storefront({ data }: Props) {
           : (canCart
             ? <button className="primary-button full" disabled={detail.stock === 0} onClick={() => addToCart(detail)}>{detail.stock ? 'Agregar a la bolsa' : 'Agotado'}<Plus /></button>
             : <a className="primary-button full wa-green" href={waHref(orderText(detail))} target="_blank" rel="noreferrer"><MessageCircle size={18} />Pedir por WhatsApp</a>)}
+        {canSend && <button type="button" className="friend-button" onClick={() => void sendToFriend(detail)}><Send size={16} />Enviar a una amiga</button>}
       </div>
     </div></div>}
 
-    {canBook && bookingService && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}><X /></button>{bookingConfirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>CITA AGENDADA</span><h2>Te esperamos en ELA.</h2><p>Tu número de cita es</p><strong>{bookingConfirmation.appointmentNumber}</strong><p>Te contactaremos por WhatsApp para confirmar el horario. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(bookingConfirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}<button className="text-button" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">{copy.appointmentTitle}</span><h2>{bookingService.name}</h2><p>{bookingService.description}</p><form id="booking-form" onSubmit={submitBooking}><input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" /><div className="date-time-row"><label className="field-label">Fecha<input required name="date" type="date" min={todayIso} /></label><label className="field-label">Hora<input required name="time" type="time" step={900} /></label></div><textarea name="notes" placeholder="Notas (opcional)" rows={2} maxLength={600} />{bookingError && <p className="form-error">{bookingError}</p>}</form></div><div className="order-review"><h3>Resumen</h3><div><span>{bookingService.name}</span><strong>{money(bookingService.price)}</strong></div><div className="checkout-total"><span>Duración estimada</span><strong>{bookingService.durationMinutes} min</strong></div><button form="booking-form" disabled={bookingSubmitting} className="primary-button full">{bookingSubmitting ? 'Agendando...' : 'Confirmar cita'}<ArrowRight /></button></div></div>}</div></div>}
+    {canHistory && <><div className={`overlay ${historyOpen ? 'visible' : ''}`} onClick={() => setHistoryOpen(false)} />
+    <aside className={`history-drawer ${historyOpen ? 'open' : ''}`} aria-hidden={!historyOpen} aria-label="Mis citas y pedidos">
+      <div className="drawer-head"><div><span className="drawer-kicker">TU HISTORIAL EN {String(copy.brandName || 'ELA').toUpperCase()}</span><h2>Mis citas y pedidos</h2></div><div className="history-head-actions"><button className="icon-button" onClick={() => void loadHistory()} disabled={historyLoading} aria-label="Actualizar"><RotateCw size={17} /></button><button className="icon-button" onClick={() => setHistoryOpen(false)} aria-label="Cerrar"><X /></button></div></div>
+      <p className="history-intro">Se guardan solo en este teléfono. Mientras no te confirmemos, puedes cambiar la fecha de tu cita o tu pedido.</p>
+      <div className="history-tabs" role="tablist">
+        <button role="tab" aria-selected={historyTab === 'citas'} className={historyTab === 'citas' ? 'on' : ''} onClick={() => setHistoryTab('citas')}>Citas <b>{historyCount.appointments}</b></button>
+        <button role="tab" aria-selected={historyTab === 'pedidos'} className={historyTab === 'pedidos' ? 'on' : ''} onClick={() => setHistoryTab('pedidos')}>Pedidos <b>{historyCount.orders}</b></button>
+      </div>
+      {historyError && <p className="form-error" role="alert">{historyError}</p>}
+      <div className="history-list">
+        {historyLoading && !history.orders.length && !history.appointments.length && <p className="history-empty">Buscando…</p>}
+        {historyTab === 'citas' && history.appointments.map((visit) => <VisitCard key={visit.number} visit={visit} busy={historyBusy === visit.number} whatsappLink={whatsapp ? waHref(`Hola, es sobre mi cita ${visit.number} (${visit.serviceName}).`) : ''} onMove={moveVisit} onCancel={cancelVisit} />)}
+        {historyTab === 'pedidos' && history.orders.map((order) => <OrderCard key={order.number} order={order} busy={historyBusy === order.number} whatsappLink={whatsapp ? waHref(`Hola, es sobre mi pedido ${order.number}.`) : ''} onChange={changeOrder} />)}
+        {!historyLoading && (historyTab === 'citas' ? !history.appointments.length : !history.orders.length) && <div className="history-empty"><CalendarHeart /><p>{historyTab === 'citas' ? 'Todavía no tienes citas guardadas en este teléfono.' : 'Todavía no tienes pedidos guardados en este teléfono.'}</p></div>}
+      </div>
+    </aside></>}
+
+    {canBook && bookingService && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}><X /></button>{bookingConfirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>CITA AGENDADA</span><h2>Te esperamos en ELA.</h2><p>Tu número de cita es</p><strong>{bookingConfirmation.appointmentNumber}</strong><p>Te contactaremos por WhatsApp para confirmar el horario. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(bookingConfirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}{canHistory && <button className="history-cta" onClick={() => openHistory('citas')}><CalendarHeart size={16} />Ver mis citas y pedidos</button>}<button className="text-button" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">{copy.appointmentTitle}</span><h2>{bookingService.name}</h2><p>{bookingService.description}</p><form id="booking-form" onSubmit={submitBooking}>{canHistory && client && <p className="saved-client">Usamos tus datos de la última vez. Cámbialos si hace falta.</p>}<input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} defaultValue={canHistory ? client?.name : undefined} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} defaultValue={canHistory ? client?.phone : undefined} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" defaultValue={canHistory ? client?.email : undefined} /><div className="date-time-row"><label className="field-label">Fecha<input required name="date" type="date" min={todayIso} /></label><label className="field-label">Hora<input required name="time" type="time" step={900} /></label></div><textarea name="notes" placeholder="Notas (opcional)" rows={2} maxLength={600} />{bookingError && <p className="form-error">{bookingError}</p>}</form></div><div className="order-review"><h3>Resumen</h3><div><span>{bookingService.name}</span><strong>{money(bookingService.price)}</strong></div><div className="checkout-total"><span>Duración estimada</span><strong>{bookingService.durationMinutes} min</strong></div>{canPerk && (bookingService.guaranteeDays ?? 0) > 0 && <p className="review-perk"><Sparkles size={14} />Incluye retoque gratis hasta {daysText(bookingService.guaranteeDays ?? 0)} después de tu cita.</p>}<button form="booking-form" disabled={bookingSubmitting} className="primary-button full">{bookingSubmitting ? 'Agendando...' : 'Confirmar cita'}<ArrowRight /></button></div></div>}</div></div>}
   </div>
 }

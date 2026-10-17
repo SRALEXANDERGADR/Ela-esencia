@@ -25,7 +25,11 @@ export type InvoiceLike = {
   status: string
   createdAt: string | Date
   /** Artículos del pedido (opcional): si vienen, la factura los detalla uno por uno. */
-  lines?: Array<{ name: string; quantity: number; price: number }>
+  lines?: Array<{ name: string; quantity: number; price: number; note?: string }>
+  /** Nota debajo del concepto (ej. «Retoque gratis hasta el 8 de noviembre»). */
+  conceptNote?: string
+  /** Condiciones del retoque y los cambios (salen al final si hay alguna nota). */
+  terms?: string
 }
 
 export type PaymentLike = {
@@ -105,11 +109,11 @@ function buildInvoiceHtml(invoice: InvoiceLike): string {
         <tbody>
           ${invoice.lines?.length ? invoice.lines.map((line) => `
           <tr>
-            <td style="padding:12px;border-bottom:1px solid #eee2cf;font-size:14px;">${line.quantity} × ${escapeHtml(line.name)}<br><span style="font-size:11px;color:#a99a84;">${money(line.price)} cada uno</span></td>
+            <td style="padding:12px;border-bottom:1px solid #eee2cf;font-size:14px;">${line.quantity} × ${escapeHtml(line.name)}<br><span style="font-size:11px;color:#a99a84;">${money(line.price)} cada uno</span>${line.note ? `<br><span style="font-size:11px;color:#8a5a35;">✦ ${escapeHtml(line.note)}</span>` : ''}</td>
             <td style="padding:12px;border-bottom:1px solid #eee2cf;font-size:14px;text-align:right;font-weight:bold;">${money(line.price * line.quantity)}</td>
           </tr>`).join('') : `
           <tr>
-            <td style="padding:14px 12px;border-bottom:1px solid #eee2cf;font-size:14px;">${escapeHtml(invoice.concept)}<br><span style="font-size:11px;color:#a99a84;">${origen}</span></td>
+            <td style="padding:14px 12px;border-bottom:1px solid #eee2cf;font-size:14px;">${escapeHtml(invoice.concept)}<br><span style="font-size:11px;color:#a99a84;">${origen}</span>${invoice.conceptNote ? `<br><span style="font-size:11px;color:#8a5a35;">✦ ${escapeHtml(invoice.conceptNote)}</span>` : ''}</td>
             <td style="padding:14px 12px;border-bottom:1px solid #eee2cf;font-size:14px;text-align:right;font-weight:bold;">${money(invoice.total)}</td>
           </tr>`}
           ${invoice.paid > 0 ? `
@@ -125,6 +129,10 @@ function buildInvoiceHtml(invoice: InvoiceLike): string {
           </tr>
         </tfoot>
       </table>
+      ${invoice.terms && (invoice.conceptNote || invoice.lines?.some((line) => line.note)) ? `
+      <div style="margin:0 0 22px;padding:14px 16px;background:#faf4ea;border-left:3px solid #c9a26a;font-size:12px;line-height:1.6;color:#5b5142;">
+        <strong style="display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8a5a35;margin-bottom:4px;">Retoque y cambios</strong>${escapeHtml(invoice.terms)}
+      </div>` : ''}
 
       <div style="border-top:1px solid #eee2cf;padding-top:16px;font-size:11px;color:#a99a84;text-align:center;">
         Gracias por confiar en ELA. Documento generado automáticamente y sin firma requerida.<br>

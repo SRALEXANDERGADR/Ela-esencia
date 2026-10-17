@@ -58,6 +58,8 @@ const defaultContent: Record<string, string> = {
   cartTitle: 'Tu pedido',
   checkoutTitle: 'Completa tu pedido',
   appointmentTitle: 'Agenda tu cita',
+  // Sale en la factura cuando algo tiene retoque gratis o días de cambio.
+  guaranteeTerms: 'El retoque gratis es del mismo servicio, con cita previa y dentro de los días indicados. Los productos se cambian sin abrir y en su empaque original.',
   notificationEmail: '',
 }
 
@@ -111,13 +113,18 @@ function ensureSchema(): Promise<void> {
       // Sube el número si agregas otra tabla/columna aquí.
       const result = await db.execute(sql`select
         (select count(*) from information_schema.tables where table_schema = current_schema() and table_name in ('push_subscriptions', 'purchases', 'expenses'))
-        + (select count(*) from information_schema.columns where table_schema = current_schema() and ((table_name = 'invoices' and column_name = 'deleted_at') or (table_name = 'products' and column_name in ('cost', 'original_price', 'images')))) as n`)
+        + (select count(*) from information_schema.columns where table_schema = current_schema() and ((table_name = 'invoices' and column_name = 'deleted_at') or (table_name = 'products' and column_name in ('cost', 'original_price', 'images', 'guarantee_days')) or (table_name = 'orders' and column_name = 'access_token') or (table_name = 'appointments' and column_name in ('access_token', 'guarantee_days')))) as n`)
       const rows = ((result as unknown as { rows?: Array<{ n: number | string }> }).rows ?? (result as unknown as Array<{ n: number | string }>)) || []
-      if (Number(rows[0]?.n ?? 0) >= 7) return
+      if (Number(rows[0]?.n ?? 0) >= 11) return
       await db.execute(sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "deleted_at" timestamp`)
       await db.execute(sql`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "cost" integer NOT NULL DEFAULT 0`)
       await db.execute(sql`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "original_price" integer NOT NULL DEFAULT 0`)
       await db.execute(sql`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "images" jsonb NOT NULL DEFAULT '[]'::jsonb`)
+      // «Mis citas y pedidos» (clave secreta) y días de retoque o de cambio.
+      await db.execute(sql`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "guarantee_days" integer NOT NULL DEFAULT 0`)
+      await db.execute(sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "access_token" text NOT NULL DEFAULT ''`)
+      await db.execute(sql`ALTER TABLE "appointments" ADD COLUMN IF NOT EXISTS "access_token" text NOT NULL DEFAULT ''`)
+      await db.execute(sql`ALTER TABLE "appointments" ADD COLUMN IF NOT EXISTS "guarantee_days" integer NOT NULL DEFAULT 0`)
       await db.execute(sql`CREATE TABLE IF NOT EXISTS "purchases" ("id" serial PRIMARY KEY, "product_id" integer NOT NULL, "product_name" text NOT NULL, "fund" text NOT NULL DEFAULT 'capital', "quantity" integer NOT NULL, "unit_cost" integer NOT NULL, "total_cost" integer NOT NULL, "remaining_quantity" integer NOT NULL, "notes" text NOT NULL DEFAULT '', "created_at" timestamp NOT NULL DEFAULT now())`)
       await db.execute(sql`CREATE TABLE IF NOT EXISTS "expenses" ("id" serial PRIMARY KEY, "type" text NOT NULL DEFAULT 'negocio', "description" text NOT NULL, "amount" integer NOT NULL, "created_at" timestamp NOT NULL DEFAULT now())`)
       await db.execute(sql`CREATE TABLE IF NOT EXISTS "push_subscriptions" ("id" serial PRIMARY KEY, "endpoint" text NOT NULL UNIQUE, "p256dh" text NOT NULL, "auth" text NOT NULL, "label" text NOT NULL DEFAULT '', "created_at" timestamp NOT NULL DEFAULT now())`)
@@ -168,7 +175,11 @@ const contentKeyAllowed = (key: string) => {
 // Cada compra ("Reponer") es un lote con su costo. Al vender, sale primero
 // del lote más viejo que todavía tenga unidades.
 // ───────────────────────────────────────────────────────────────────────
-type OrderItem = { id: number; name: string; price: number; quantity: number; cost?: number; reinvCost?: number; reinvQty?: number }
+type OrderItem = { id: number; name: string; price: number; quantity: number; cost?: number; reinvCost?: number; reinvQty?: number; guaranteeDays?: number }
+/** Días de retoque o de cambio: entero de 0 a 365 (0 = no tiene). */
+const cleanDays = (value: unknown) => Math.min(365, Math.max(0, Math.round(Number(value) || 0)))
+/** Los días solo se guardan en la línea del pedido si los hay. */
+const withDays = (days: number) => (days > 0 ? { guaranteeDays: days } : {})
 const FUNDS = ['capital', 'reinversion'] as const
 type Fund = (typeof FUNDS)[number]
 /** Lo que costaron unas unidades vendidas, y cuánto de eso (y cuántas
@@ -446,8 +457,10 @@ export const getStorefront = createServerFn({ method: 'GET' }).handler(async () 
     db.select().from(content),
   ])
   const publicContent = contentRows.filter((item) => !PRIVATE_CONTENT_KEYS.includes(item.key) && contentKeyAllowed(item.key))
-  // La tienda pública nunca recibe el costo (lo que pagó la dueña).
-  const publicProducts = productRows.map(({ cost: _cost, ...product }) => product)
+  // La tienda pública nunca recibe el costo (lo que pagó la dueña). Sin
+  // «retoque» en el plan, tampoco los días de retoque o de cambio.
+  const conRetoque = puede(currentPlan().plan, 'retoque')
+  const publicProducts = productRows.map(({ cost: _cost, ...product }) => (conRetoque ? product : { ...product, guaranteeDays: 0 }))
   return { products: publicProducts, content: Object.fromEntries(publicContent.map((item) => [item.key, item.value])), ...currentPlan() }
 })
 
@@ -473,7 +486,7 @@ export const createOrder = createServerFn({ method: 'POST' })
       const product = productRows.find((row) => row.id === productId)
       if (!product || product.kind !== 'producto') throw new Error('Uno de los productos de tu bolsa ya no está disponible. Revisa tu bolsa.')
       if (product.stock < quantity) throw new Error(product.stock > 0 ? `Solo quedan ${product.stock} de ${product.name}.` : `${product.name} se agotó.`)
-      return { id: product.id, name: product.name, price: product.price, quantity }
+      return { id: product.id, name: product.name, price: product.price, quantity, ...withDays(puede(currentPlan().plan, 'retoque') ? product.guaranteeDays : 0) }
     })
     const total = calculated.reduce((sum, item) => sum + item.price * item.quantity, 0)
     const customer = await findOrCreateCustomer(data)
@@ -484,9 +497,12 @@ export const createOrder = createServerFn({ method: 'POST' })
     // estas operaciones se hacen en secuencia en vez de dentro de una tx.
     // Sale del inventario por lotes (FIFO) y cada línea guarda lo que costó.
     const items = await takeLines(calculated)
+    // Clave para «Mis citas y pedidos». Se crea siempre (así, si la web sube
+    // de plan, lo de antes también se puede seguir).
+    const accessToken = newAccessToken()
     let order: typeof orders.$inferSelect
     try {
-      [order] = await db.insert(orders).values({ orderNumber, customerId: customer.id, customerName: data.name, email: data.email, phone: data.phone, address: data.address, items, total, createdAt }).returning()
+      [order] = await db.insert(orders).values({ orderNumber, customerId: customer.id, customerName: data.name, email: data.email, phone: data.phone, address: data.address, items, total, createdAt, accessToken }).returning()
     } catch (error) {
       await returnLines(items)
       throw error
@@ -521,7 +537,7 @@ export const createOrder = createServerFn({ method: 'POST' })
       }),
     ])
 
-    return { orderNumber, total, orderId: order.id }
+    return { orderNumber, total, orderId: order.id, token: accessToken }
   })
 
 export const createAppointment = createServerFn({ method: 'POST' })
@@ -540,7 +556,9 @@ export const createAppointment = createServerFn({ method: 'POST' })
     const appointmentNumber = makeFolio('CITA')
     const createdAt = new Date()
 
-    const [appointment] = await db.insert(appointments).values({ appointmentNumber, customerId: customer.id, customerName: data.name, phone: data.phone, email: data.email, serviceId: service.id, serviceName: service.name, price: service.price, date: data.date, time: data.time, notes: data.notes, createdAt }).returning()
+    const accessToken = newAccessToken()
+    const guaranteeDays = puede(currentPlan().plan, 'retoque') ? service.guaranteeDays : 0
+    const [appointment] = await db.insert(appointments).values({ appointmentNumber, customerId: customer.id, customerName: data.name, phone: data.phone, email: data.email, serviceId: service.id, serviceName: service.name, price: service.price, date: data.date, time: data.time, notes: data.notes, createdAt, guaranteeDays, accessToken }).returning()
     await db.insert(invoices).values({
       folio: makeFolio('FAC'),
       sourceType: 'cita',
@@ -566,7 +584,144 @@ export const createAppointment = createServerFn({ method: 'POST' })
       }),
     ])
 
-    return { appointmentNumber, appointmentId: appointment.id }
+    return { appointmentNumber, appointmentId: appointment.id, token: accessToken }
+  })
+
+// ───────────────────────────────────────────────────────────────────────
+// MIS CITAS Y PEDIDOS — el teléfono de la clienta guarda el número de cada
+// cita y pedido con su clave secreta. Con eso ve cómo va (sin contraseña) y,
+// mientras no esté confirmado, cambia la fecha de su cita, devuelve su
+// pedido a la bolsa para cambiarlo, o cancela.
+// ───────────────────────────────────────────────────────────────────────
+function newAccessToken() {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+type HistoryKey = { number: string; token: string }
+const cleanKeys = (list: unknown): HistoryKey[] => (Array.isArray(list) ? list : [])
+  .map((item) => ({ number: String((item as HistoryKey)?.number || '').slice(0, 40), token: String((item as HistoryKey)?.token || '').slice(0, 64) }))
+  .filter((item) => item.number && item.token.length >= 32)
+  .slice(0, 30)
+
+const invoicesFor = async (sourceType: 'pedido' | 'cita', ids: number[]) => ids.length
+  ? db.select({ sourceId: invoices.sourceId, paid: invoices.paid, status: invoices.status }).from(invoices).where(and(eq(invoices.sourceType, sourceType), inArray(invoices.sourceId, ids)))
+  : []
+
+export const getMyHistory = createServerFn({ method: 'POST' })
+  .inputValidator((data: { orders: HistoryKey[]; appointments: HistoryKey[] }) => ({ orders: cleanKeys(data?.orders), appointments: cleanKeys(data?.appointments) }))
+  .handler(async ({ data }) => {
+    requirePlan('historial')
+    await ensureSchema()
+    const [orderRows, appointmentRows] = await Promise.all([
+      data.orders.length ? db.select().from(orders).where(and(inArray(orders.orderNumber, data.orders.map((key) => key.number)), isNull(orders.deletedAt))) : [],
+      data.appointments.length ? db.select().from(appointments).where(and(inArray(appointments.appointmentNumber, data.appointments.map((key) => key.number)), isNull(appointments.deletedAt))) : [],
+    ])
+    const myOrders = orderRows.filter((row) => row.accessToken && data.orders.some((key) => key.number === row.orderNumber && key.token === row.accessToken))
+    const myAppointments = appointmentRows.filter((row) => row.accessToken && data.appointments.some((key) => key.number === row.appointmentNumber && key.token === row.accessToken))
+    const [orderInvoices, appointmentInvoices] = await Promise.all([invoicesFor('pedido', myOrders.map((row) => row.id)), invoicesFor('cita', myAppointments.map((row) => row.id))])
+    const ids = [...new Set([...myOrders.flatMap((row) => row.items.map((item) => item.id)), ...myAppointments.map((row) => row.serviceId ?? 0)])].filter(Boolean)
+    const productRows = ids.length ? await db.select({ id: products.id, image: products.image }).from(products).where(inArray(products.id, ids)) : []
+    const imageOf = (id: number | null) => productRows.find((row) => row.id === id)?.image ?? ''
+    const paidOn = (list: Array<{ sourceId: number; paid: number }>, id: number) => list.filter((row) => row.sourceId === id).reduce((sum, row) => sum + row.paid, 0)
+    return {
+      // Al cliente nunca se le manda el costo.
+      orders: myOrders.sort((a, b) => +b.createdAt - +a.createdAt).map((row) => ({
+        number: row.orderNumber,
+        createdAt: row.createdAt.toISOString(),
+        status: row.status,
+        paymentStatus: row.paymentStatus,
+        total: row.total,
+        canChange: row.status === 'Pendiente' && row.paymentStatus === 'Pendiente' && paidOn(orderInvoices, row.id) === 0,
+        items: row.items.map((item) => ({ productId: item.id, name: item.name, price: item.price, quantity: item.quantity, image: imageOf(item.id), guaranteeDays: item.guaranteeDays ?? 0 })),
+      })),
+      appointments: myAppointments.sort((a, b) => `${b.date}${b.time}`.localeCompare(`${a.date}${a.time}`)).map((row) => ({
+        number: row.appointmentNumber,
+        createdAt: row.createdAt.toISOString(),
+        status: row.status,
+        paymentStatus: row.paymentStatus,
+        serviceId: row.serviceId,
+        serviceName: row.serviceName,
+        image: imageOf(row.serviceId),
+        price: row.price,
+        date: row.date,
+        time: row.time,
+        guaranteeDays: row.guaranteeDays,
+        canMove: row.status === 'Pendiente',
+        canCancel: row.status === 'Pendiente' && row.paymentStatus === 'Pendiente' && paidOn(appointmentInvoices, row.id) === 0,
+      })),
+    }
+  })
+
+/** La clienta cancela su pedido (para cambiarlo o porque ya no lo quiere).
+ * Solo si sigue pendiente y sin abonos. Sus unidades vuelven al inventario. */
+export const cancelMyOrder = createServerFn({ method: 'POST' })
+  .inputValidator((data: HistoryKey) => cleanKeys([data])[0] ?? { number: '', token: '' })
+  .handler(async ({ data }) => {
+    requirePlan('historial')
+    if (!data.number) throw new Error('No encontramos ese pedido.')
+    await ensureSchema()
+    const [order] = await db.select().from(orders).where(and(eq(orders.orderNumber, data.number), isNull(orders.deletedAt))).limit(1)
+    if (!order || !order.accessToken || order.accessToken !== data.token) throw new Error('No encontramos ese pedido.')
+    const [invoice] = await db.select().from(invoices).where(and(eq(invoices.sourceType, 'pedido'), eq(invoices.sourceId, order.id))).limit(1)
+    if (order.status === 'Cancelado') throw new Error('Este pedido ya está cancelado.')
+    if (order.status !== 'Pendiente' || order.paymentStatus !== 'Pendiente' || (invoice?.paid ?? 0) > 0) throw new Error('Este pedido ya está en camino o tiene un pago, así que no se puede cambiar desde aquí. Escríbenos por WhatsApp y te ayudamos.')
+    // Primero se marca como cancelado (solo si seguía pendiente): así, si se
+    // toca dos veces, las unidades no vuelven dos veces.
+    const [updated] = await db.update(orders).set({ status: 'Cancelado' }).where(and(eq(orders.id, order.id), eq(orders.status, 'Pendiente'), eq(orders.paymentStatus, 'Pendiente'))).returning()
+    if (!updated) throw new Error('Este pedido ya cambió. Recarga la página.')
+    await returnLines(order.items as OrderItem[])
+    if (invoice && invoice.status !== 'Cancelada' && invoice.paid === 0) await db.update(invoices).set({ status: 'Cancelada' }).where(eq(invoices.id, invoice.id))
+    try { await notifyAdmins({ title: '↩️ Pedido cancelado por la clienta', body: `${order.customerName} canceló el pedido ${order.orderNumber} (${formatMoney(order.total)}) desde la web. Sus unidades volvieron al inventario.`.slice(0, 220), url: '/admin?tab=pedidos', tag: `${order.orderNumber}-cancelado` }) } catch { /* sin aviso */ }
+    return { items: order.items.map((item) => ({ productId: item.id, name: item.name, quantity: item.quantity })) }
+  })
+
+/** Hora de RD para las notas que deja la clienta. */
+const stampDR = () => new Intl.DateTimeFormat('es-DO', { timeZone: 'America/Santo_Domingo', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date())
+
+async function loadMyAppointment(key: HistoryKey) {
+  if (!key.number) throw new Error('No encontramos esa cita.')
+  await ensureSchema()
+  const [appointment] = await db.select().from(appointments).where(and(eq(appointments.appointmentNumber, key.number), isNull(appointments.deletedAt))).limit(1)
+  if (!appointment || !appointment.accessToken || appointment.accessToken !== key.token) throw new Error('No encontramos esa cita.')
+  if (appointment.status === 'Cancelada') throw new Error('Esta cita ya está cancelada.')
+  return appointment
+}
+
+/** La clienta cancela su cita. Solo si nadie la ha confirmado y no tiene abonos. */
+export const cancelMyAppointment = createServerFn({ method: 'POST' })
+  .inputValidator((data: HistoryKey) => cleanKeys([data])[0] ?? { number: '', token: '' })
+  .handler(async ({ data }) => {
+    requirePlan('historial')
+    const appointment = await loadMyAppointment(data)
+    const [invoice] = await db.select().from(invoices).where(and(eq(invoices.sourceType, 'cita'), eq(invoices.sourceId, appointment.id))).limit(1)
+    if (appointment.status !== 'Pendiente' || appointment.paymentStatus !== 'Pendiente' || (invoice?.paid ?? 0) > 0) throw new Error('Esta cita ya está confirmada o tiene un abono, así que no se puede cancelar desde aquí. Escríbenos por WhatsApp y te ayudamos.')
+    const notes = `${appointment.notes ? `${appointment.notes}\n` : ''}Cancelada por la clienta desde la web (${stampDR()}).`.slice(0, 1200)
+    const [updated] = await db.update(appointments).set({ status: 'Cancelada', notes }).where(and(eq(appointments.id, appointment.id), eq(appointments.status, 'Pendiente'))).returning()
+    if (!updated) throw new Error('Esta cita ya cambió. Recarga la página.')
+    if (invoice && invoice.status !== 'Cancelada' && invoice.paid === 0) await db.update(invoices).set({ status: 'Cancelada' }).where(eq(invoices.id, invoice.id))
+    try { await notifyAdmins({ title: '↩️ Cita cancelada por la clienta', body: `${appointment.customerName} canceló ${appointment.serviceName} del ${prettyDateEs(appointment.date)} a las ${prettyTimeEs(appointment.time)}.`.slice(0, 220), url: '/admin?tab=citas', tag: `${appointment.appointmentNumber}-cancelada` }) } catch { /* sin aviso */ }
+    return true
+  })
+
+/** La clienta cambia la fecha u hora de su cita mientras no esté confirmada. */
+export const moveMyAppointment = createServerFn({ method: 'POST' })
+  .inputValidator((data: HistoryKey & { date: string; time: string }) => ({ ...(cleanKeys([data])[0] ?? { number: '', token: '' }), date: clean(data?.date, 10), time: clean(data?.time, 5) }))
+  .handler(async ({ data }) => {
+    requirePlan('historial')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date) || !/^\d{2}:\d{2}$/.test(data.time)) throw new Error('Revisa la fecha y la hora.')
+    if (data.date < todayInDR()) throw new Error('Elige una fecha de hoy en adelante.')
+    const appointment = await loadMyAppointment(data)
+    if (appointment.status !== 'Pendiente') throw new Error('Esta cita ya está confirmada, así que no se puede cambiar desde aquí. Escríbenos por WhatsApp y te ayudamos.')
+    if (appointment.date === data.date && appointment.time === data.time) return true
+    const before = `${prettyDateEs(appointment.date)} a las ${prettyTimeEs(appointment.time)}`
+    const notes = `${appointment.notes ? `${appointment.notes}\n` : ''}Cambiada por la clienta desde la web (${stampDR()}). Antes: ${before}`.slice(0, 1200)
+    const [updated] = await db.update(appointments).set({ date: data.date, time: data.time, notes }).where(and(eq(appointments.id, appointment.id), eq(appointments.status, 'Pendiente'))).returning()
+    if (!updated) throw new Error('Esta cita ya cambió. Recarga la página.')
+    await db.update(invoices).set({ concept: `${appointment.serviceName} — cita del ${data.date} ${data.time}` }).where(and(eq(invoices.sourceType, 'cita'), eq(invoices.sourceId, appointment.id)))
+    try { await notifyAdmins({ title: `📅 Cita cambiada · ${appointment.serviceName}`, body: `${appointment.customerName} la movió al ${prettyDateEs(data.date)} a las ${prettyTimeEs(data.time)} (antes: ${before}).`.slice(0, 220), url: '/admin?tab=citas', tag: `${appointment.appointmentNumber}-movida` }) } catch { /* sin aviso */ }
+    return true
   })
 
 // ───────────────────────────────────────────────────────────────────────
@@ -635,7 +790,7 @@ export const getAdminData = createServerFn({ method: 'GET' }).handler(async () =
 // ADMIN — productos y servicios
 // ───────────────────────────────────────────────────────────────────────
 export const saveProduct = createServerFn({ method: 'POST' })
-  .inputValidator((data: { id?: number; kind: string; name: string; category: string; description: string; price: number; originalPrice?: number; stock: number; durationMinutes: number; image: string; images?: string[]; featured: boolean; active: boolean }) => data)
+  .inputValidator((data: { id?: number; kind: string; name: string; category: string; description: string; price: number; originalPrice?: number; stock: number; durationMinutes: number; image: string; images?: string[]; featured: boolean; active: boolean; guaranteeDays?: number }) => data)
   .handler(async ({ data }) => {
     await requireAdmin()
     if (!clean(data.name)) throw new Error('Escribe el nombre del artículo.')
@@ -649,18 +804,21 @@ export const saveProduct = createServerFn({ method: 'POST' })
     const mainImage = clean(data.image, 1000)
     const images = [...new Set((Array.isArray(data.images) ? data.images : []).map((url) => clean(url, 1000)).filter((url) => url && url !== mainImage))].slice(0, 10)
     const values = { images, kind: data.kind, name: clean(data.name, 160), category: clean(data.category, 80) || 'General', description: clean(data.description, 2000), price: Math.round(Number(data.price)), originalPrice: Math.max(0, Math.round(Number(data.originalPrice) || 0)), stock: data.id || (puede(currentPlan().plan, 'existencia') && !puede(currentPlan().plan, 'lotes')) ? Math.floor(Number(data.stock) || 0) : 0, durationMinutes: Math.max(0, Math.floor(Number(data.durationMinutes) || 0)), image: clean(data.image, 1000), featured: data.featured, active: data.active }
+    // Sin «retoque» en el plan, los días que ya tenga el artículo se conservan.
+    const conRetoque = puede(currentPlan().plan, 'retoque')
     if (data.id) {
       const [current] = await db.select().from(products).where(eq(products.id, data.id)).limit(1)
+      const guaranteeDays = conRetoque && data.guaranteeDays !== undefined ? cleanDays(data.guaranteeDays) : current?.guaranteeDays ?? 0
       // Las fotos que ya no se usan (ni como principal ni en la galería) van
       // a la papelera de imágenes.
       const kept = new Set([mainImage, ...images])
       for (const url of [current?.image, ...(current?.images ?? [])]) {
         if (url && !kept.has(url)) await trashImage(url, 'Imagen reemplazada desde el panel de administración')
       }
-      await db.update(products).set(values).where(eq(products.id, data.id))
+      await db.update(products).set({ ...values, guaranteeDays }).where(eq(products.id, data.id))
       return data.id
     }
-    const [created] = await db.insert(products).values(values).returning({ id: products.id })
+    const [created] = await db.insert(products).values({ ...values, guaranteeDays: conRetoque ? cleanDays(data.guaranteeDays) : 0 }).returning({ id: products.id })
     return created.id
   })
 
@@ -1123,7 +1281,7 @@ export const recordManualSale = createServerFn({ method: 'POST' })
       if (!product || product.kind !== 'producto') throw new Error('Uno de los productos ya no existe.')
       const already = lines.filter((line) => line.id === productId).reduce((sum, line) => sum + line.quantity, 0)
       if (product.stock < already + quantity) throw new Error(`No hay suficientes unidades de ${product.name} (quedan ${product.stock}). Si tienes más, regístralas primero con «Reponer».`)
-      lines.push({ id: product.id, name: product.name, price, quantity })
+      lines.push({ id: product.id, name: product.name, price, quantity, ...withDays(puede(currentPlan().plan, 'retoque') ? product.guaranteeDays : 0) })
     }
     const items = await takeLines(lines)
     const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0)

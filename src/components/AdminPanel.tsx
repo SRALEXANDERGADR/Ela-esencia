@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { AlertTriangle, ArrowLeft, Ban, Bell, BellOff, BellRing, Boxes, Layers, PiggyBank, ShoppingCart, Calendar, CalendarPlus, Check, CheckCircle2, ChevronRight, Clock, Download, Eye, EyeOff, FileText, Home, ImageOff, ImagePlus, LoaderCircle, LogOut, MapPin, MessageCircle, MoreHorizontal, Package, Pencil, PlusCircle, ReceiptText, RotateCcw, Save, Scissors, Search, Share2, ShoppingBag, Smartphone, Trash, Trash2, UserPlus, Users, Wallet, X, Lock } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Ban, Bell, BellOff, BellRing, Boxes, Layers, PiggyBank, ShoppingCart, Sparkles, Calendar, CalendarPlus, Check, CheckCircle2, ChevronRight, Clock, Download, Eye, EyeOff, FileText, Home, ImageOff, ImagePlus, LoaderCircle, LogOut, MapPin, MessageCircle, MoreHorizontal, Package, Pencil, PlusCircle, ReceiptText, RotateCcw, Save, Scissors, Search, Share2, ShoppingBag, Smartphone, Trash, Trash2, UserPlus, Users, Wallet, X, Lock } from 'lucide-react'
 import { cancelInvoice, checkSession, deleteAppointment, deleteCustomer, deleteInvoice, deleteOrder, deleteExpense, deleteProduct, deletePurchase, getAdminData, recordExpense, recordManualSale, recordPurchase, getPushSetup, login, logout, removePushSubscription, savePushSubscription, sendTestPush, purgeAppointment, purgeCustomer, purgeInvoice, purgeOrder, purgeProduct, registerPayment, restoreAppointment, restoreCustomer, restoreInvoice, restoreOrder, restoreProduct, saveAppointmentAdmin, saveContent, saveCustomer, saveProduct, updateAppointmentStatus, updateOrderStatus } from '@/lib/store'
 import type { InvoiceLike, PaymentLike } from '@/lib/invoice'
 import { compressImage } from '@/lib/image'
@@ -8,11 +8,11 @@ import { formatMoney } from '@/lib/money'
 import { CLAVES_POR_FUNCION, NOMBRE_PLAN, planMinimo, puede, type Funcion, type Plan } from '@/lib/plan'
 import { fromBase64Url, toBase64Url } from '@/lib/push'
 
-type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; cost: number; stock: number; durationMinutes: number; image: string; images: string[]; featured: boolean; active: boolean }
+type Product = { id: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; cost: number; stock: number; durationMinutes: number; image: string; images: string[]; featured: boolean; active: boolean; guaranteeDays: number }
 type Purchase = { id: number; productId: number; productName: string; fund: string; quantity: number; unitCost: number; totalCost: number; remainingQuantity: number; notes: string; createdAt: string | Date }
 type Expense = { id: number; type: string; description: string; amount: number; createdAt: string | Date }
-type Order = { id: number; orderNumber: string; customerId: number | null; customerName: string; email: string; phone: string; address: string; total: number; status: string; paymentStatus: string; items: Array<{ id: number; name: string; price: number; quantity: number; cost?: number; reinvCost?: number; reinvQty?: number }>; createdAt: string | Date }
-type Appointment = { id: number; appointmentNumber: string; customerId: number | null; customerName: string; phone: string; email: string; serviceId: number | null; serviceName: string; price: number; date: string; time: string; notes: string; status: string; paymentStatus: string; createdAt: string | Date }
+type Order = { id: number; orderNumber: string; customerId: number | null; customerName: string; email: string; phone: string; address: string; total: number; status: string; paymentStatus: string; items: Array<{ id: number; name: string; price: number; quantity: number; cost?: number; reinvCost?: number; reinvQty?: number; guaranteeDays?: number }>; createdAt: string | Date }
+type Appointment = { id: number; appointmentNumber: string; customerId: number | null; customerName: string; phone: string; email: string; serviceId: number | null; serviceName: string; price: number; date: string; time: string; notes: string; status: string; paymentStatus: string; guaranteeDays: number; createdAt: string | Date }
 type Customer = { id: number; name: string; email: string; phone: string; address: string; notes: string; createdAt: string | Date }
 type Invoice = InvoiceLike & { sourceId: number; customerId: number | null }
 type Doc = InvoiceLike
@@ -30,7 +30,7 @@ type AdminData = { plan: Plan; demo: boolean; products: Product[]; orders: Order
 type Tab = 'resumen' | 'citas' | 'pedidos' | 'facturas' | 'catalogo' | 'finanzas' | 'clientes' | 'contenido' | 'app' | 'papelera'
 const TAB_IDS: Tab[] = ['resumen', 'citas', 'pedidos', 'facturas', 'catalogo', 'finanzas', 'clientes', 'contenido', 'app', 'papelera']
 type CustomerDraft = { id?: number; name: string; email: string; phone: string; address: string; notes: string }
-type ProductDraft = { id?: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; stock: number; durationMinutes: number; image: string; images: string[]; featured: boolean; active: boolean }
+type ProductDraft = { id?: number; kind: string; name: string; category: string; description: string; price: number; originalPrice: number; stock: number; durationMinutes: number; image: string; images: string[]; featured: boolean; active: boolean; guaranteeDays: number }
 type Fund = 'capital' | 'reinversion'
 type PurchaseDraft = { productId: string; quantity: string; unitCost: string; fund: Fund; notes: string }
 type SaleLine = { productId: string; quantity: string; price: string }
@@ -80,7 +80,12 @@ const waLink = (phone: string, text = '') => {
   return `https://wa.me/${digits}${text ? `?text=${encodeURIComponent(text)}` : ''}`
 }
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches' }
-const blankProduct = (kind = 'servicio'): ProductDraft => ({ kind, name: '', category: '', description: '', price: 0, originalPrice: 0, images: [], stock: 0, durationMinutes: 30, image: '', featured: false, active: true })
+const blankProduct = (kind = 'servicio'): ProductDraft => ({ kind, name: '', category: '', description: '', price: 0, originalPrice: 0, images: [], stock: 0, durationMinutes: 30, image: '', featured: false, active: true, guaranteeDays: 0 })
+/** Botones rápidos de días: retoque gratis (servicios) o cambio (productos). */
+const PERK_PRESETS: Record<string, number[]> = { servicio: [0, 7, 15, 21, 30], producto: [0, 3, 7, 15, 30] }
+const daysText = (days: number) => `${days} ${days === 1 ? 'día' : 'días'}`
+/** Fecha de la cita + días de retoque → «8 de noviembre». */
+const perkUntil = (iso: string, days: number) => { const [y, m, d] = iso.split('-').map(Number); return y ? new Intl.DateTimeFormat('es-DO', { day: 'numeric', month: 'long' }).format(new Date(y, m - 1, d + days)) : '' }
 const blankCustomer: CustomerDraft = { name: '', email: '', phone: '', address: '', notes: '' }
 const ORDER_STATUSES = ['Pendiente', 'Preparando', 'Enviado', 'Entregado', 'Cancelado']
 const APPOINTMENT_STATUSES = ['Pendiente', 'Confirmada', 'Completada', 'Cancelada']
@@ -520,7 +525,7 @@ export function AdminPanel() {
   async function handleProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!editing) return; setBusy(true); setError('')
     try {
-      const id = await saveProduct({ data: { ...editing, price: Number(editing.price), originalPrice: Number(editing.originalPrice || 0), stock: Number(editing.stock), durationMinutes: Number(editing.durationMinutes) } })
+      const id = await saveProduct({ data: { ...editing, price: Number(editing.price), originalPrice: Number(editing.originalPrice || 0), stock: Number(editing.stock), durationMinutes: Number(editing.durationMinutes), guaranteeDays: Math.max(0, Math.round(Number(editing.guaranteeDays) || 0)) } })
       const wasNew = !editing.id
       const newProduct = wasNew && editing.kind === 'producto' && can('lotes')
       setEditing(null); await refresh()
@@ -672,11 +677,17 @@ export function AdminPanel() {
     await run(() => deleteInvoice({ data: { id: invoice.id, force: invoice.paid > 0 } }), (can('papelera') ? 'Factura enviada a la papelera.' : 'Factura borrada.'))
   }
 
-  /** La factura con los artículos del pedido, para el PDF. */
+  /** La factura con los artículos del pedido, para el PDF. Con «retoque» en el
+   * plan, lleva también el retoque gratis o los días de cambio. */
   function docFor(invoice: Invoice): Doc {
-    if (invoice.sourceType !== 'pedido') return invoice
+    const perks = can('retoque')
+    const terms = perks ? data?.content.guaranteeTerms || '' : ''
+    if (invoice.sourceType === 'cita') {
+      const visit = data?.appointments.find((item) => item.id === invoice.sourceId)
+      return visit && perks && visit.guaranteeDays > 0 ? { ...invoice, conceptNote: `Retoque gratis hasta el ${perkUntil(visit.date, visit.guaranteeDays)}`, terms } : invoice
+    }
     const order = data?.orders.find((item) => item.id === invoice.sourceId)
-    return order ? { ...invoice, lines: order.items } : invoice
+    return order ? { ...invoice, terms, lines: order.items.map((item) => ({ ...item, note: perks && (item.guaranteeDays ?? 0) > 0 ? `Cambio hasta ${daysText(item.guaranteeDays ?? 0)} después de recibirlo` : undefined })) } : invoice
   }
 
   async function uploadOne(file: File) {
@@ -1089,6 +1100,12 @@ export function AdminPanel() {
         <label>Precio (RD$)<input required type="number" inputMode="decimal" min="0" step="0.01" value={editing.price / 100} onChange={(event) => setEditing({ ...editing, price: Math.round(Number(event.target.value) * 100) })} /></label>
         <label>Precio antes (opcional)<input type="number" inputMode="decimal" min="0" step="0.01" placeholder="Sale tachado si es mayor" value={editing.originalPrice ? editing.originalPrice / 100 : ''} onChange={(event) => setEditing({ ...editing, originalPrice: Math.round(Number(event.target.value || 0) * 100) })} /></label>
         {editing.kind === 'producto' ? (can('existencia') ? (editing.id || !can('lotes') ? <label>Unidades en existencia<input required type="number" inputMode="numeric" min="0" value={editing.stock} onChange={(event) => setEditing({ ...editing, stock: Number(event.target.value) })} /><small className="field-hint">{can('lotes') ? 'Para sumar unidades usa «Reponer» (así queda lo que costaron). Cambia este número solo para corregir.' : 'Pon cuántas unidades tienes. Baja solo cada vez que vendes; cámbialo cuando recibas más.'}</small></label> : <p className="field-hint wide">Un producto nuevo empieza en 0. Al guardar se abre «Reponer» para poner cuántas compraste y a cuánto.</p>) : null) : <label>Duración (minutos)<input required type="number" inputMode="numeric" min="5" step="5" value={editing.durationMinutes} onChange={(event) => setEditing({ ...editing, durationMinutes: Number(event.target.value) })} /></label>}
+        {can('retoque') ? <div className="wide perk-field">
+          <span className="perk-field-label">{editing.kind === 'servicio' ? 'Retoque gratis después de la cita' : 'Días para cambio después de recibirlo'}</span>
+          <div className="perk-presets" role="group">{(PERK_PRESETS[editing.kind] ?? PERK_PRESETS.producto).map((days) => <button type="button" key={days} className={Number(editing.guaranteeDays || 0) === days ? 'on' : ''} onClick={() => setEditing({ ...editing, guaranteeDays: days })}>{days ? daysText(days) : editing.kind === 'servicio' ? 'Sin retoque' : 'Sin cambio'}</button>)}</div>
+          <label>Otro número de días<input type="number" inputMode="numeric" min="0" max="365" value={editing.guaranteeDays || 0} onChange={(event) => setEditing({ ...editing, guaranteeDays: Number(event.target.value) })} /></label>
+          <small className="field-hint">Sale en la tienda, en «Mis citas y pedidos» y en la factura. Las condiciones se cambian en Textos de la web → Retoque y cambios.</small>
+        </div> : demo && <div className="wide"><LockedPill funcion="retoque" label="Retoque gratis y días para cambio" /></div>}
         <label className="check-field"><input type="checkbox" checked={editing.active} onChange={(event) => setEditing({ ...editing, active: event.target.checked })} />Visible en la tienda</label>
         <label className="check-field"><input type="checkbox" checked={editing.featured} onChange={(event) => setEditing({ ...editing, featured: event.target.checked })} />Destacado (sale primero)</label>
       </div>
@@ -1296,7 +1313,7 @@ function OrderCard({ order, invoice, onChange, onOpen, onInvoice, onDelete }: { 
       <div><strong className="record-name">{order.customerName}</strong><small>{order.orderNumber} · {shortDate(order.createdAt)}</small></div>
       <strong className="record-amount">{money(order.total)}</strong>
     </header>
-    <ul className="record-lines">{order.items.map((line, index) => <li key={index}><span>{line.quantity} × {line.name}</span><b>{money(line.price * line.quantity)}</b></li>)}</ul>
+    <ul className="record-lines">{order.items.map((line, index) => <li key={index}><span>{line.quantity} × {line.name}{(line.guaranteeDays ?? 0) > 0 && <small className="record-perk"><Sparkles size={11} />Cambio {daysText(line.guaranteeDays ?? 0)}</small>}</span><b>{money(line.price * line.quantity)}</b></li>)}</ul>
     {order.address && <p className="record-meta nowrap"><MapPin size={14} /><span>{order.address}</span></p>}
     <div className="record-status"><label>Estado<StatusSelect label="Estado del pedido" value={order.status} options={ORDER_STATUSES} onChange={(status) => onChange(status, order.paymentStatus)} /></label><label>Pago<StatusSelect label="Pago del pedido" value={order.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(order.status, paymentStatus)} /></label></div>
     {invoiceNote(invoice)}
@@ -1311,6 +1328,7 @@ function AppointmentCard({ item, invoice, onChange, onOpen, onInvoice, onDelete 
       <div className="record-who"><strong className="record-name">{item.customerName}</strong><small>{item.serviceName}</small></div>
       <strong className="record-amount">{money(item.price)}</strong>
     </header>
+    {item.guaranteeDays > 0 && item.status !== 'Cancelada' && <p className="record-meta record-perk-line"><Sparkles size={14} /><span>Retoque gratis hasta el {perkUntil(item.date, item.guaranteeDays)}</span></p>}
     {item.notes && <p className="record-meta">Nota: {item.notes}</p>}
     <div className="record-status"><label>Estado<StatusSelect label="Estado de la cita" value={item.status} options={APPOINTMENT_STATUSES} onChange={(status) => onChange(status, item.paymentStatus)} /></label><label>Pago<StatusSelect label="Pago de la cita" value={item.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(item.status, paymentStatus)} /></label></div>
     {invoiceNote(invoice)}
@@ -1441,9 +1459,10 @@ function ContentEditor({ plan, values, dirty, onChange, onUpload, onSave, busy, 
     ['Avisos por correo', 'A quién le llega un correo con cada pedido o cita nueva.', ['notificationEmail']],
     ['Marca y menú', 'Nombre, eslogan y las palabras del menú de arriba.', ['brandName', 'brandTagline', 'navServices', 'navCatalog', 'navBenefits', 'navContact']],
     ['Bolsa y formularios', 'Títulos de la bolsa de compras, el pedido y las citas.', ['cartTitle', 'checkoutTitle', 'appointmentTitle']],
+    ['Retoque y cambios', 'Sale en la factura cuando un servicio tiene retoque gratis o un producto tiene días para cambio.', ['guaranteeTerms']],
   ]
   const groups = allGroups.map(([title, description, keys]): [string, string, string[]] => [title, description, keys.filter(allowed)]).filter(([, , keys]) => keys.length > 0)
-  const labels: Record<string, string> = { paymentMethods: 'Métodos de pago', brandName: 'Nombre de marca', brandTagline: 'Eslogan', navServices: 'Menú: servicios', navCatalog: 'Menú: productos', navBenefits: 'Menú: beneficios', navContact: 'Menú: contacto', eyebrow: 'Texto pequeño de arriba', heroTitle: 'Título principal', heroDescription: 'Descripción principal', heroCta: 'Texto del botón', heroImage: 'Foto de portada', benefitsTitle: 'Título de beneficios', benefit1Title: 'Beneficio 1 — título', benefit1Text: 'Beneficio 1 — texto', benefit2Title: 'Beneficio 2 — título', benefit2Text: 'Beneficio 2 — texto', benefit3Title: 'Beneficio 3 — título', benefit3Text: 'Beneficio 3 — texto', servicesTitle: 'Título de servicios', servicesDescription: 'Descripción de servicios', catalogTitle: 'Título de productos', catalogDescription: 'Descripción de productos', storyTitle: 'Título de la historia', storyText: 'Historia de la marca', footerText: 'Frase del pie de página', whatsapp: 'Número de WhatsApp', location: 'Ubicación', instagram: 'Instagram', tiktok: 'TikTok', schedule: 'Horario', cartTitle: 'Título de la bolsa', checkoutTitle: 'Título del formulario de pedido', appointmentTitle: 'Título del formulario de citas', notificationEmail: 'Correo para avisos' }
+  const labels: Record<string, string> = { paymentMethods: 'Métodos de pago', brandName: 'Nombre de marca', brandTagline: 'Eslogan', navServices: 'Menú: servicios', navCatalog: 'Menú: productos', navBenefits: 'Menú: beneficios', navContact: 'Menú: contacto', eyebrow: 'Texto pequeño de arriba', heroTitle: 'Título principal', heroDescription: 'Descripción principal', heroCta: 'Texto del botón', heroImage: 'Foto de portada', benefitsTitle: 'Título de beneficios', benefit1Title: 'Beneficio 1 — título', benefit1Text: 'Beneficio 1 — texto', benefit2Title: 'Beneficio 2 — título', benefit2Text: 'Beneficio 2 — texto', benefit3Title: 'Beneficio 3 — título', benefit3Text: 'Beneficio 3 — texto', servicesTitle: 'Título de servicios', servicesDescription: 'Descripción de servicios', catalogTitle: 'Título de productos', catalogDescription: 'Descripción de productos', storyTitle: 'Título de la historia', storyText: 'Historia de la marca', footerText: 'Frase del pie de página', whatsapp: 'Número de WhatsApp', location: 'Ubicación', instagram: 'Instagram', tiktok: 'TikTok', schedule: 'Horario', cartTitle: 'Título de la bolsa', checkoutTitle: 'Título del formulario de pedido', appointmentTitle: 'Título del formulario de citas', notificationEmail: 'Correo para avisos', guaranteeTerms: 'Condiciones del retoque y los cambios' }
   const hints: Record<string, string> = {
     notificationEmail: 'Cada pedido o cita nueva envía un correo con los detalles. Si son varios correos, sepáralos con coma. Este dato no se muestra en la tienda.',
     paymentMethods: 'Se muestran en el pie de la tienda. Sepáralos con coma, ej.: Efectivo, Transferencia. Déjalo vacío para no mostrarlos.',
@@ -1451,7 +1470,7 @@ function ContentEditor({ plan, values, dirty, onChange, onUpload, onSave, busy, 
     instagram: 'Con o sin @. Ej.: @ela.esencia',
     tiktok: 'Con o sin @. Ej.: @ela.esencia',
   }
-  const longFields = ['heroDescription', 'storyText', 'catalogDescription', 'servicesDescription']
+  const longFields = ['heroDescription', 'storyText', 'catalogDescription', 'servicesDescription', 'guaranteeTerms']
   return <section className="content-editor">
     <div className="editor-top"><div><span>TEXTOS E IMÁGENES</span><h2>Textos de la tienda</h2><p>Cambia lo que se lee en la web sin tocar el código. Los cambios se ven al guardar.</p></div></div>
     {groups.map(([title, description, keys], index) => <details className="editor-group" key={title} open={index < 2}>

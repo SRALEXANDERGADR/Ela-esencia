@@ -24,6 +24,9 @@ export const products = pgTable('products', {
   image: text('image').notNull().default(''), // foto principal
   // Fotos extra (galería que se desliza en la tienda). La columna la crea `ensureSchema()`.
   images: jsonb('images').notNull().default([]).$type<string[]>(),
+  // Días de retoque gratis (servicio) o de cambio (producto) después de la
+  // cita o de recibirlo. 0 = no tiene. Se copia al pedido o a la cita.
+  guaranteeDays: integer('guarantee_days').notNull().default(0),
   featured: boolean('featured').notNull().default(false),
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -61,10 +64,13 @@ export const orders = pgTable('orders', {
   // `cost` = lo que costó cada unidad (sale del lote de compra del que se
   // vendió). `reinvCost`/`reinvQty`: cuánto costaron EN TOTAL y cuántas
   // unidades salieron de lotes pagados con el dinero para reinvertir.
-  items: jsonb('items').notNull().$type<Array<{ id: number; name: string; price: number; quantity: number; cost?: number; reinvCost?: number; reinvQty?: number }>>(),
+  // `guaranteeDays` = días de cambio que tenía el producto al venderlo.
+  items: jsonb('items').notNull().$type<Array<{ id: number; name: string; price: number; quantity: number; cost?: number; reinvCost?: number; reinvQty?: number; guaranteeDays?: number }>>(),
   total: integer('total').notNull(),
   status: text('status').notNull().default('Pendiente'), // Pendiente, Preparando, Enviado, Entregado, Cancelado
   paymentStatus: text('payment_status').notNull().default('Pendiente'), // Pendiente, Pagado, Reembolsado
+  // Clave secreta para «Mis citas y pedidos» (el teléfono de la clienta la guarda). '' = de antes.
+  accessToken: text('access_token').notNull().default(''),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   deletedAt: timestamp('deleted_at'), // papelera
 })
@@ -87,6 +93,10 @@ export const appointments = pgTable('appointments', {
   notes: text('notes').notNull().default(''),
   status: text('status').notNull().default('Pendiente'), // Pendiente, Confirmada, Completada, Cancelada
   paymentStatus: text('payment_status').notNull().default('Pendiente'), // Pendiente, Pagado, Reembolsado
+  // Días de retoque gratis que tenía el servicio al agendar (0 = no tiene).
+  guaranteeDays: integer('guarantee_days').notNull().default(0),
+  // Clave secreta para «Mis citas y pedidos». '' = cita de antes.
+  accessToken: text('access_token').notNull().default(''),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   deletedAt: timestamp('deleted_at'), // papelera
 })
