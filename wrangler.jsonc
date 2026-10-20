@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ela-esencia",
-  "main": "@tanstack/react-start/server-entry",
+  "main": "src/server.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
@@ -14,6 +14,8 @@
   // Fotos nuevas de productos y servicios (ver src/lib/fotos.ts). El bucket
   // tiene que existir en la cuenta de Cloudflare antes de publicar.
   "r2_buckets": [{ "binding": "FOTOS", "bucket_name": "ela-esencia-fotos" }],
+  // Toca la base de datos cada 12 horas para que Neon no la archive (ver src/server.ts).
+  "triggers": { "crons": ["0 */12 * * *"] },
   "observability": {
     "enabled": true
   }

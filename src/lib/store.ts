@@ -89,6 +89,26 @@ function makeFolio(prefix: string) {
 // Los productos de ejemplo se ponen UNA sola vez (tienda nueva). Antes, si
 // la dueña borraba todos sus productos, los de ejemplo volvían a salir.
 let seeded = false
+// Mantenimiento (textos por defecto + limpieza de papelera): antes se hacía en
+// CADA carga de la tienda y del panel, y eso sumaba varias consultas lentas a
+// Neon cada vez (con la base recién despertada, el panel llegaba a colgarse).
+// Ahora se hace como máximo una vez cada 6 horas por instancia del Worker.
+const MAINTENANCE_MS = 6 * 60 * 60 * 1000
+let seededAt = 0
+let cleanedAt = 0
+
+async function ensureSeededThrottled() {
+  if (Date.now() - seededAt < MAINTENANCE_MS) return
+  await ensureSeeded()
+  seededAt = Date.now()
+}
+
+async function cleanupThrottled() {
+  if (Date.now() - cleanedAt < MAINTENANCE_MS) return
+  cleanedAt = Date.now()
+  await cleanupExpired()
+}
+
 async function ensureSeeded() {
   if (seeded) return
   await db.insert(content).values(Object.entries(defaultContent).map(([key, value]) => ({ key, value }))).onConflictDoNothing()
@@ -451,7 +471,7 @@ export const getPlanInfo = createServerFn({ method: 'GET' }).handler(async () =>
 // ───────────────────────────────────────────────────────────────────────
 export const getStorefront = createServerFn({ method: 'GET' }).handler(async () => {
   await ensureSchema() // las columnas nuevas de products tienen que existir antes de leerlas
-  await ensureSeeded()
+  await ensureSeededThrottled()
   const [productRows, contentRows] = await Promise.all([
     db.select().from(products).where(and(eq(products.active, true), isNull(products.deletedAt))).orderBy(desc(products.featured), products.id),
     db.select().from(content),
@@ -730,8 +750,8 @@ export const moveMyAppointment = createServerFn({ method: 'POST' })
 export const getAdminData = createServerFn({ method: 'GET' }).handler(async () => {
   await requireAdmin()
   await ensureSchema()
-  await ensureSeeded()
-  await cleanupExpired()
+  await ensureSeededThrottled()
+  await cleanupThrottled()
   // Lo que el plan no incluye no se manda al panel (se esconde, no se borra:
   // al subir de plan todo vuelve a salir tal como estaba).
   const { plan, demo } = currentPlan()
