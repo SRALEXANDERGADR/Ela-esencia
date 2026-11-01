@@ -505,6 +505,8 @@ export const createOrder = createServerFn({ method: 'POST' })
     const calculated = [...wanted.entries()].map(([productId, quantity]) => {
       const product = productRows.find((row) => row.id === productId)
       if (!product || product.kind !== 'producto') throw new Error('Uno de los productos de tu bolsa ya no está disponible. Revisa tu bolsa.')
+      // Sin precio («Precio a consultar») no se pide por la web: se pregunta por WhatsApp.
+      if (product.price <= 0) throw new Error(`${product.name} no tiene precio todavía. Pregúntanos por WhatsApp.`)
       if (product.stock < quantity) throw new Error(product.stock > 0 ? `Solo quedan ${product.stock} de ${product.name}.` : `${product.name} se agotó.`)
       return { id: product.id, name: product.name, price: product.price, quantity, ...withDays(puede(currentPlan().plan, 'retoque') ? product.guaranteeDays : 0) }
     })

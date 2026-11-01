@@ -367,7 +367,16 @@ export function Storefront({ data, initialDetailId }: Props) {
     if (toastTimer.current) clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToastVisible(false), 3200)
   }
+  // Al abrir la bolsa, el aviso se quita para no tapar el botón de continuar.
+  useEffect(() => {
+    if (cartOpen) setToastVisible(false)
+  }, [cartOpen])
   const addToCart = (product: Product) => {
+    // Sin precio no se puede pedir por la web: se pregunta por WhatsApp.
+    if (product.price <= 0) {
+      if (whatsapp) window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(`Hola, ¿cuál es el precio de ${product.name}? Lo vi en la web.`)}`, '_blank', 'noopener')
+      return
+    }
     const inCart = cart.find((line) => line.productId === product.id)?.quantity ?? 0
     if (inCart >= product.stock) {
       showToast({ title: `Ya tienes en la bolsa todas las que hay (${product.stock})`, name: product.name, image: product.image })
@@ -502,7 +511,7 @@ export function Storefront({ data, initialDetailId }: Props) {
    * del teléfono o, si no hay, copia el enlace). */
   async function sendToFriend(product: Product) {
     const url = `${window.location.origin}/catalogo/${product.id}`
-    const text = `Mira esto de ${copy.brandName || 'ELA'}: ${product.name} · ${money(product.price)}`
+    const text = `Mira esto de ${copy.brandName || 'ELA'}: ${product.name} · ${product.price > 0 ? money(product.price) : 'precio a consultar'}`
     const nav = navigator as Navigator & { share?: (data: ShareData) => Promise<void> }
     if (nav.share) {
       try { await nav.share({ title: product.name, text, url }); return } catch (caught) { if ((caught as Error)?.name === 'AbortError') return }
@@ -520,10 +529,12 @@ export function Storefront({ data, initialDetailId }: Props) {
   // Métodos de pago del pie: se editan en el panel (Textos → Contacto y redes).
   const paymentMethods = [...new Set(String(copy.paymentMethods ?? 'Efectivo, Transferencia').split(/[,\n]+/).map((item) => item.trim()).filter(Boolean))].slice(0, 12)
   const waHref = (text: string) => `https://wa.me/${whatsapp}?text=${encodeURIComponent(text)}`
+  // Un producto o servicio con precio 0 sale como «Precio a consultar» (no «RD$0.00»).
+  const priceText = (cents: number) => (cents > 0 ? money(cents) : 'Precio a consultar')
   const openWa = (text: string) => window.open(waHref(text), '_blank', 'noopener')
   // Sin bolsa ni citas en la web (plan Básico), el cliente pide o agenda por WhatsApp.
-  const orderText = (product: Product) => `Hola, quiero pedir este producto de la web: ${product.name} (${money(product.price)}).`
-  const bookText = (service: Product) => `Hola, quiero agendar este servicio de la web: ${service.name} (${money(service.price)}).`
+  const orderText = (product: Product) => product.price > 0 ? `Hola, quiero pedir este producto de la web: ${product.name} (${money(product.price)}).` : `Hola, ¿cuál es el precio de ${product.name}? Lo vi en la web.`
+  const bookText = (service: Product) => `Hola, quiero agendar este servicio de la web: ${service.name}${service.price > 0 ? ` (${money(service.price)})` : ''}.`
 
   useScrollReveal([visibleProducts.length, category, query, services.length])
   // Fotos que fallaron antes de que la página terminara de cargar (el
@@ -605,7 +616,7 @@ export function Storefront({ data, initialDetailId }: Props) {
               <p>{service.description}</p>
               <div className="service-meta"><span><Clock size={14} />{service.durationMinutes} min</span>{canPerk && (service.guaranteeDays ?? 0) > 0 && <span className="perk-chip"><Sparkles size={13} />Retoque gratis · {daysText(service.guaranteeDays ?? 0)}</span>}</div>
               {canSend && <button type="button" className="friend-link" onClick={() => void sendToFriend(service)}><Send size={12} />Enviar a una amiga</button>}
-              <div className="product-action"><strong>{service.originalPrice > service.price && <span className="price-was">{money(service.originalPrice)}</span>}{money(service.price)}</strong>{canBook
+              <div className="product-action"><strong>{service.price > 0 && service.originalPrice > service.price && <span className="price-was">{money(service.originalPrice)}</span>}{priceText(service.price)}</strong>{canBook
               ? <button onClick={() => { setBookingService(service); setBookingConfirmation(null); setBookingError('') }}>Agendar cita<Calendar size={16} /></button>
               : <button onClick={() => openWa(bookText(service))}>Agendar por WhatsApp<MessageCircle size={16} /></button>}</div>
             </div>
@@ -623,8 +634,10 @@ export function Storefront({ data, initialDetailId }: Props) {
             <div className="product-number">{String(index + 1).padStart(2, '0')}</div>
             <div className="product-image"><Gallery photos={photosOf(product)} alt={product.name} onOpen={() => setDetail(product)} />{canStock && product.stock === 0 && <span>Agotado</span>}</div>
             <div className="product-info"><p className="product-category">{product.category}</p><h3 className="clickable" onClick={() => setDetail(product)}>{product.name}</h3><p>{product.description}</p>{canStock && <div className="stock-line"><span className={product.stock ? '' : 'empty'}>{product.stock ? (product.stock <= 5 ? `¡Quedan ${product.stock}!` : 'Disponible') : 'Sin existencias'}</span></div>}{canSend && <button type="button" className="friend-link" onClick={() => void sendToFriend(product)}><Send size={12} />Enviar a una amiga</button>}</div>
-            <div className="product-action"><strong>{product.originalPrice > product.price && <span className="price-was">{money(product.originalPrice)}</span>}{money(product.price)}</strong>{canCart
+            <div className="product-action"><strong className={product.price > 0 ? '' : 'price-ask'}>{product.price > 0 && product.originalPrice > product.price && <span className="price-was">{money(product.originalPrice)}</span>}{priceText(product.price)}</strong>{canCart && product.price > 0
               ? <button disabled={product.stock === 0} onClick={() => addToCart(product)}>{product.stock ? 'Agregar' : 'Agotado'}<Plus /></button>
+              : canCart && whatsapp ? <button onClick={() => openWa(orderText(product))}>Preguntar<MessageCircle /></button>
+              : canCart ? <button disabled>Agotado<Plus /></button>
               : <button onClick={() => openWa(orderText(product))}>Pedir por WhatsApp<MessageCircle /></button>}</div>
           </article>)}{visibleProducts.length === 0 && <div className="empty-state"><Search /><h3>No encontramos ese producto</h3><p>Prueba otra palabra o categoría.</p></div>}</div>
         </div>
@@ -681,7 +694,7 @@ export function Storefront({ data, initialDetailId }: Props) {
       <div className="detail-sheet-info">
         <p className="product-category">{detail.category}</p>
         <h2>{detail.name}</h2>
-        <p className="detail-sheet-price">{detail.originalPrice > detail.price && <s>{money(detail.originalPrice)}</s>}{money(detail.price)}</p>
+        <p className="detail-sheet-price">{detail.price > 0 && detail.originalPrice > detail.price && <s>{money(detail.originalPrice)}</s>}{priceText(detail.price)}</p>
         {detail.kind === 'servicio' ? <p className="detail-sheet-meta"><Clock size={15} /> {detail.durationMinutes} min</p> : (canStock && <p className="detail-sheet-meta">{detail.stock ? (detail.stock <= 5 ? `¡Quedan ${detail.stock}!` : 'Disponible') : 'Sin existencias'}</p>)}
         <p className="detail-sheet-desc">{detail.description}</p>
         {canPerk && (detail.guaranteeDays ?? 0) > 0 && <p className="detail-perk"><Sparkles size={15} />{detail.kind === 'servicio' ? `Retoque gratis hasta ${daysText(detail.guaranteeDays ?? 0)} después de tu cita` : `Cambio hasta ${daysText(detail.guaranteeDays ?? 0)} después de recibirlo`}</p>}
@@ -689,7 +702,7 @@ export function Storefront({ data, initialDetailId }: Props) {
           ? (canBook
             ? <button className="primary-button full" onClick={() => { const service = detail; setDetail(null); setBookingService(service); setBookingConfirmation(null); setBookingError('') }}>Agendar cita<Calendar size={18} /></button>
             : <a className="primary-button full wa-green" href={waHref(bookText(detail))} target="_blank" rel="noreferrer"><MessageCircle size={18} />Agendar por WhatsApp</a>)
-          : (canCart
+          : (canCart && detail.price > 0
             ? <button className="primary-button full" disabled={detail.stock === 0} onClick={() => addToCart(detail)}>{detail.stock ? 'Agregar a la bolsa' : 'Agotado'}<Plus /></button>
             : <a className="primary-button full wa-green" href={waHref(orderText(detail))} target="_blank" rel="noreferrer"><MessageCircle size={18} />Pedir por WhatsApp</a>)}
         {canSend && <button type="button" className="friend-button" onClick={() => void sendToFriend(detail)}><Send size={16} />Enviar a una amiga</button>}

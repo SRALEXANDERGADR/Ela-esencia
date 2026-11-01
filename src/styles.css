@@ -1012,3 +1012,6 @@ h3.clickable{cursor:pointer}
 .perk-presets button.on{background:var(--gold-dark);border-color:var(--gold-dark);color:#fff}
 .record-perk{display:inline-flex;align-items:center;gap:4px;margin-left:8px;font:500 10px var(--font-mono);letter-spacing:.04em;color:var(--gold-dark)}
 .record-perk-line{color:var(--gold-dark)!important;font-weight:600}
+
+/* Producto sin precio: «Precio a consultar» en letra normal, no del tamaño del precio. */
+.product-action strong.price-ask{font-size:15px;font-style:italic;color:var(--muted, #8a7a6a)}
