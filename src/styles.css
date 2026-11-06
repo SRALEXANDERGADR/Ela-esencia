@@ -1016,3 +1016,9 @@ h3.clickable{cursor:pointer}
 
 /* Producto sin precio: «Precio a consultar» en letra normal, no del tamaño del precio. */
 .product-action strong.price-ask{font-size:15px;font-style:italic;color:var(--muted, #8a7a6a)}
+
+/* Plan Básico: «Agendar por WhatsApp» es más largo que «Agendar cita». Si no
+   cabe al lado del precio, el botón baja a su propia línea (antes el precio
+   quedaba pegado al botón en el teléfono). */
+.service-info .product-action{flex-wrap:wrap;gap:8px 10px}
+.service-info .product-action button{white-space:nowrap}
