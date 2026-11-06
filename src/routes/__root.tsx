@@ -1,6 +1,7 @@
 import { HeadContent, Link, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
 import { GadrDemo } from '@/components/GadrDemo'
 import { getPlanInfo } from '@/lib/store'
+import { BRAND, BRAND_TITLE, splitBrand } from '@/lib/brand'
 
 import '../styles.css'
 import '../gadr-demo.css'
@@ -25,19 +26,19 @@ export const Route = createRootRoute({
         content: '#f6efe2',
       },
       {
-        title: 'ELA — La belleza de ser tú.',
+        title: BRAND_TITLE,
       },
       {
         name: 'description',
-        content: 'Servicios de belleza (diseño de cejas, pestañas) y productos artesanales (jabones, mantequillas corporales) en Jarabacoa, República Dominicana.',
+        content: BRAND.description,
       },
       {
         property: 'og:title',
-        content: 'ELA — La belleza de ser tú.',
+        content: BRAND_TITLE,
       },
       {
         property: 'og:description',
-        content: 'Belleza, cuidado y bienestar: servicios de cejas y pestañas, y productos artesanales hechos a mano.',
+        content: BRAND.shareDescription,
       },
       {
         property: 'og:type',
@@ -45,15 +46,15 @@ export const Route = createRootRoute({
       },
       {
         property: 'og:url',
-        content: 'https://elaesencia.gadrnet.workers.dev/',
+        content: `${BRAND.site}/`,
       },
       {
         property: 'og:image',
-        content: 'https://elaesencia.gadrnet.workers.dev/og-cover.jpg',
+        content: `${BRAND.site}/og-cover.jpg?v=3`,
       },
       {
         property: 'og:image:alt',
-        content: 'ELA — La belleza de ser tú.',
+        content: BRAND_TITLE,
       },
       {
         name: 'twitter:card',
@@ -61,26 +62,26 @@ export const Route = createRootRoute({
       },
       {
         name: 'twitter:title',
-        content: 'ELA — La belleza de ser tú.',
+        content: BRAND_TITLE,
       },
       {
         name: 'twitter:description',
-        content: 'Belleza, cuidado y bienestar: servicios de cejas y pestañas, y productos artesanales hechos a mano.',
+        content: BRAND.shareDescription,
       },
       {
         name: 'twitter:image',
-        content: 'https://elaesencia.gadrnet.workers.dev/og-cover.jpg',
+        content: `${BRAND.site}/og-cover.jpg?v=3`,
       },
     ],
     links: [
       { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
       { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' },
       { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Mrs+Saint+Delafield&display=swap' },
-      { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
-      { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/favicon-16x16.png' },
-      { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
-      { rel: 'icon', type: 'image/png', sizes: '48x48', href: '/favicon-48x48.png' },
-      { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png?v=2' },
+      { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico?v=3' },
+      { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/favicon-16x16.png?v=3' },
+      { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png?v=3' },
+      { rel: 'icon', type: 'image/png', sizes: '48x48', href: '/favicon-48x48.png?v=3' },
+      { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png?v=3' },
       { rel: 'msapplication-config', href: '/browserconfig.xml' },
     ],
   }),
@@ -97,7 +98,7 @@ function RootLayout() {
   // La barra de la demo va ANTES del resto para guardar la cookie del plan antes
   // de que la página pida datos al servidor. Solo sale con PLAN = "demo".
   return <>
-    <GadrDemo plan={plan} demo={demo} web="Ela Esencia" />
+    <GadrDemo plan={plan} demo={demo} web={BRAND.name} />
     <Outlet />
   </>
 }
@@ -105,7 +106,7 @@ function RootLayout() {
 function ErrorScreen({ title, text, retry = false }: { title: string; text: string; retry?: boolean }) {
   return (
     <main className="error-screen">
-      <span className="brand-mark"><span className="brand-mark-main">Ela</span><span className="brand-mark-sub">esencia</span></span>
+      <span className="brand-mark"><span className="brand-mark-main">{splitBrand(BRAND.name).main}</span><span className="brand-mark-sub">{splitBrand(BRAND.name).sub}</span></span>
       <h1>{title}</h1>
       <p>{text}</p>
       <div>

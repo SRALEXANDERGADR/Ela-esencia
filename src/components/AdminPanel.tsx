@@ -1,3 +1,4 @@
+import { BRAND } from '@/lib/brand'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangle, ArrowLeft, Ban, Bell, BellOff, BellRing, Boxes, Layers, PiggyBank, ShoppingCart, Sparkles, Calendar, CalendarPlus, Check, CheckCircle2, ChevronRight, Clock, Download, Eye, EyeOff, FileText, Home, ImageOff, ImagePlus, LoaderCircle, LogOut, MapPin, MessageCircle, MoreHorizontal, Package, Pencil, PlusCircle, ReceiptText, RotateCcw, Save, Scissors, Search, Share2, ShoppingBag, Smartphone, Trash, Trash2, UserPlus, Users, Wallet, X, Lock } from 'lucide-react'
@@ -95,7 +96,9 @@ const PAYMENT_STATUSES = ['Pendiente', 'Pagado', 'Reembolsado']
 // cuando de verdad se descarga o comparte una factura.
 const invoiceLib = () => import('@/lib/invoice')
 // WhatsApp y ubicación de "Textos de la web", para que salgan en la factura.
-let businessInfo: { whatsapp?: string; location?: string } = {}
+let businessInfo: { name?: string; tagline?: string; whatsapp?: string; location?: string } = {}
+/** Nombre de la tienda para los mensajes de WhatsApp y el menú del panel. */
+const shopName = () => businessInfo.name?.trim() || BRAND.name
 /** Genera/descarga/comparte una factura o recibo. Muestra un aviso si falla. */
 async function withInvoiceLib(task: (lib: Awaited<ReturnType<typeof invoiceLib>>) => Promise<void>) {
   try {
@@ -108,7 +111,7 @@ async function withInvoiceLib(task: (lib: Awaited<ReturnType<typeof invoiceLib>>
 }
 
 // ───────────────────────────────────────────────────────────────────────
-// APP "ELA Admin" Y NOTIFICACIONES — igual que en JB Tech Store. El panel
+// APP «<marca> Admin» Y NOTIFICACIONES — igual que en JB Tech Store. El panel
 // se instala como app y cada cita o pedido nuevo manda un aviso al
 // teléfono (con el punto en el ícono), aunque la app esté cerrada.
 // ───────────────────────────────────────────────────────────────────────
@@ -143,7 +146,7 @@ if (typeof window !== 'undefined') {
 
 /** Qué app se instala desde /admin: sin sesión, la TIENDA (así una clienta
  * que llegue aquí e instale desde el menú de Chrome se lleva la tienda, que
- * abre en el inicio); con la sesión abierta, "ELA Admin". Al salir del panel
+ * abre en el inicio); con la sesión abierta, «<marca> Admin». Al salir del panel
  * se quita, para que en la tienda nunca se ofrezca instalar el panel. */
 function setAdminManifest(mode: 'admin' | 'store' | 'off') {
   let link = document.getElementById('admin-manifest') as HTMLLinkElement | null
@@ -173,7 +176,7 @@ async function pushActiveHere() {
 
 // Si alguien toca «Apagar» en un aparato, se respeta: no se vuelve a
 // encender sola ahí hasta que toque «Activar notificaciones» otra vez.
-const PUSH_OFF_KEY = 'ela-avisos-apagados'
+const PUSH_OFF_KEY = 'tienda-avisos-apagados'
 const pushTurnedOff = () => { try { return localStorage.getItem(PUSH_OFF_KEY) === '1' } catch { return false } }
 const setPushTurnedOff = (off: boolean) => { try { if (off) localStorage.setItem(PUSH_OFF_KEY, '1'); else localStorage.removeItem(PUSH_OFF_KEY) } catch { /* sin almacenamiento */ } }
 
@@ -313,8 +316,8 @@ function AppAndNotifications() {
   return (
     <div className="app-card">
       <div className="app-card-head">
-        <img src="/admin-192.png" alt="" />
-        <div><strong>App "ELA Admin" y avisos</strong><span>Instala el panel como app en tu teléfono y te llega una notificación (con el punto en el ícono) cada vez que alguien agenda una cita o hace un pedido, aunque la app esté cerrada.</span></div>
+        <img src="/admin-192.png?v=3" alt="" />
+        <div><strong>App «{BRAND.name.split(' ')[0]} Admin» y avisos</strong><span>Instala el panel como app en tu teléfono y te llega una notificación (con el punto en el ícono) cada vez que alguien agenda una cita o hace un pedido, aunque la app esté cerrada.</span></div>
       </div>
 
       <div className="app-step">
@@ -335,9 +338,9 @@ function AppAndNotifications() {
           <strong>Avisos en este aparato</strong>
           {state === 'cargando' && <span>Revisando…</span>}
           {state === 'no-soportado' && (/iPhone|iPad/i.test(navigator.userAgent)
-            ? <span>En iPhone los avisos solo funcionan con la app en la pantalla de inicio: abre <b>elaesencia.gadrnet.workers.dev/admin</b> en <b>Safari</b>, entra con la contraseña, toca <b>Compartir</b> (el cuadrito con la flecha) → <b>«Agregar a inicio»</b>. Luego abre la app de ELA desde el ícono y vuelve aquí. (Necesita iPhone con iOS 16.4 o más nuevo.)</span>
+            ? <span>En iPhone los avisos solo funcionan con la app en la pantalla de inicio: abre <b>{typeof window !== 'undefined' ? window.location.host : 'tu web'}/admin</b> en <b>Safari</b>, entra con la contraseña, toca <b>Compartir</b> (el cuadrito con la flecha) → <b>«Agregar a inicio»</b>. Luego abre la app desde el ícono y vuelve aquí. (Necesita iPhone con iOS 16.4 o más nuevo.)</span>
             : <span>Este navegador no puede recibir notificaciones. Abre el panel en Chrome o Edge (Android, Windows o Mac), Firefox o Samsung Internet.</span>)}
-          {state === 'bloqueado' && <span className="app-warn">Las notificaciones están bloqueadas para esta página. Toca el candado junto a la dirección (o Ajustes del teléfono → Apps → ELA Admin → Notificaciones) y ponlas en «Permitir»; luego vuelve aquí.</span>}
+          {state === 'bloqueado' && <span className="app-warn">Las notificaciones están bloqueadas para esta página. Toca el candado junto a la dirección (o Ajustes del teléfono → Apps → {BRAND.name.split(' ')[0]} Admin → Notificaciones) y ponlas en «Permitir»; luego vuelve aquí.</span>}
           {state === 'apagado' && <button type="button" className="admin-action" disabled={working} onClick={enable}><Bell size={16} />{working ? 'Activando…' : 'Activar notificaciones'}</button>}
           {state === 'activo' && <div className="app-actions">
             <span className="app-ok"><Check size={14} />Activadas en este aparato.</span>
@@ -419,7 +422,7 @@ export function AdminPanel() {
   async function refresh() {
     const result = await getAdminData()
     setData(result as unknown as AdminData)
-    businessInfo = { whatsapp: result.content.whatsapp, location: result.content.location }
+    businessInfo = { name: result.content.brandName, tagline: result.content.brandTagline, whatsapp: result.content.whatsapp, location: result.content.location }
     setFinanceSettings({ capitalInicial: String(Number(result.content.capitalInicial || 0) / 100), reinvestPercent: String(Number(result.content.reinvestPercent ?? 70)) })
     setContentDraft(result.content)
     setContentDirty(false)
@@ -794,7 +797,7 @@ export function AdminPanel() {
   }, [data, q, filter])
 
   if (authenticated === null) return <div className="admin-loading"><LoaderCircle /><p>Preparando tu espacio...</p></div>
-  if (!authenticated) return <div className="admin-login"><div className="login-art"><Link to="/"><ArrowLeft /> Volver a la tienda</Link><div className="login-monogram">E</div><p>El detrás de escena de cada servicio y producto.</p></div><div className="login-form-wrap"><div><span>ACCESO PRIVADO</span><h1>Panel de<br />administración</h1><p>Ingresa la contraseña de administración.</p><form onSubmit={handleLogin}><label>Contraseña<input required type="password" name="password" placeholder="••••••••" autoFocus autoComplete="current-password" /></label>{error && <p className="form-error">{error}</p>}<button className="primary-button full" disabled={busy}>{busy ? 'Ingresando...' : 'Entrar al panel'}</button></form></div></div></div>
+  if (!authenticated) return <div className="admin-login"><div className="login-art"><Link to="/"><ArrowLeft /> Volver a la tienda</Link><div className="login-monogram">{BRAND.name.charAt(0)}</div><p>El detrás de escena de cada servicio y producto.</p></div><div className="login-form-wrap"><div><span>ACCESO PRIVADO</span><h1>Panel de<br />administración</h1><p>Ingresa la contraseña de administración.</p><form onSubmit={handleLogin}><label>Contraseña<input required type="password" name="password" placeholder="••••••••" autoFocus autoComplete="current-password" /></label>{error && <p className="form-error">{error}</p>}<button className="primary-button full" disabled={busy}>{busy ? 'Ingresando...' : 'Entrar al panel'}</button></form></div></div></div>
 
   if (!data) return <div className="admin-loading"><LoaderCircle /><p>Cargando información...</p></div>
 
@@ -899,7 +902,7 @@ export function AdminPanel() {
   const searchBox = (placeholder: string) => <label className="search-field"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={placeholder} />{query && <button type="button" aria-label="Borrar búsqueda" onClick={() => setQuery('')}><X size={14} /></button>}</label>
 
   return <div className="admin-shell">
-    <aside className="admin-sidebar"><Link to="/" className="admin-brand"><span>E</span><div>ELA<small>Administración</small></div></Link>
+    <aside className="admin-sidebar"><Link to="/" className="admin-brand"><span>{shopName().charAt(0)}</span><div>{shopName()}<small>Administración</small></div></Link>
       <nav>{groups.map((group) => <div key={group} className="nav-group"><small className="nav-group-title">{group}</small>{visibleTabs.filter((item) => item.group === group).map((item) => <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => goTo(item.id)} title={isLocked(item) ? `${item.label} · Disponible en el plan ${NOMBRE_PLAN[planMinimo(item.fn!)]}` : item.label}>{item.icon}<span className="nav-label">{item.label}</span>{!!item.badge && <b className="nav-badge">{item.badge}</b>}{isLocked(item) && <Lock className="nav-lock" />}</button>)}</div>)}</nav>
       <Link to="/" className="logout sidebar-store"><Eye />Ver la tienda</Link>
       <button className="logout" onClick={handleLogout}><LogOut />Cerrar sesión</button>
@@ -1065,14 +1068,14 @@ export function AdminPanel() {
           const ordersCount = data.orders.filter((order) => order.customerId === customer.id).length
           const appointmentsCount = data.appointments.filter((item) => item.customerId === customer.id).length
           const owed = data.invoices.filter((invoice) => invoice.customerId === customer.id && invoice.status !== 'Cancelada').reduce((sum, invoice) => sum + Math.max(invoice.total - invoice.paid, 0), 0)
-          const wa = waLink(customer.phone, `Hola ${customer.name.split(' ')[0]}, te escribimos de ELA.`)
+          const wa = waLink(customer.phone, `Hola ${customer.name.split(' ')[0]}, te escribimos de ${shopName()}.`)
           return <article key={customer.id}><div className="customer-card-top"><div className="avatar">{customer.name.slice(0, 2).toUpperCase()}</div><div className="row-actions">{wa && <a className="wa-button" href={wa} target="_blank" rel="noreferrer" title="Escribir por WhatsApp"><MessageCircle /></a>}<button title="Editar" onClick={() => { setError(''); setEditingCustomer(customer) }}><Pencil /></button><button title="Eliminar" onClick={() => { if (confirm(trashAsk(customer.name))) run(() => deleteCustomer({ data: customer.id }), trashDone) }}><Trash2 /></button></div></div><h3>{customer.name}</h3>{customer.phone && <p>{customer.phone}</p>}{customer.email && <a href={`mailto:${customer.email}`}>{customer.email}</a>}{customer.address && <p>{customer.address}</p>}{customer.notes && <small className="customer-notes">{customer.notes}</small>}<small>{ordersCount} {ordersCount === 1 ? 'pedido' : 'pedidos'} · {appointmentsCount} {appointmentsCount === 1 ? 'cita' : 'citas'}{owed > 0 && <> · <em className="balance-due">debe {money(owed)}</em></>}</small></article>
         })}{!filteredCustomers.length && <div className="empty-admin">No hay clientes que mostrar.</div>}</div>
       </section>}
 
       {!lockedFn && view === 'contenido' && <ContentEditor plan={plan} values={contentDraft} dirty={contentDirty} onChange={(next) => { setContentDraft(next); setContentDirty(true) }} onUpload={(file) => uploadImage(file, 'hero')} onSave={saveSiteContent} busy={busy} uploading={uploading} />}
 
-      {!lockedFn && view === 'app' && <div className="dashboard"><AppAndNotifications /><div className="admin-card app-help"><h3>¿Cómo funciona?</h3><ol><li>Toca <b>Instalar app</b>: queda un ícono "ELA Admin" en tu teléfono, como cualquier otra app.</li><li>Toca <b>Activar notificaciones</b> y luego <b>Permitir</b>.</li><li>Cada vez que una clienta agende una cita o haga un pedido en la web, te suena el teléfono. Al tocar el aviso se abre la app en Citas o Pedidos.</li></ol><p>Si otra persona también atiende la tienda, que entre al panel desde su teléfono y haga lo mismo.</p></div></div>}
+      {!lockedFn && view === 'app' && <div className="dashboard"><AppAndNotifications /><div className="admin-card app-help"><h3>¿Cómo funciona?</h3><ol><li>Toca <b>Instalar app</b>: queda un ícono «{BRAND.name.split(' ')[0]} Admin» en tu teléfono, como cualquier otra app.</li><li>Toca <b>Activar notificaciones</b> y luego <b>Permitir</b>.</li><li>Cada vez que una clienta agende una cita o haga un pedido en la web, te suena el teléfono. Al tocar el aviso se abre la app en Citas o Pedidos.</li></ol><p>Si otra persona también atiende la tienda, que entre al panel desde su teléfono y haga lo mismo.</p></div></div>}
 
       {!lockedFn && view === 'papelera' && <TrashPanel trash={data.trash} onRestore={restoreItem} onPurge={purgeItem} />}
     </main>
@@ -1317,7 +1320,7 @@ function OrderCard({ order, invoice, onChange, onOpen, onInvoice, onDelete }: { 
     {order.address && <p className="record-meta nowrap"><MapPin size={14} /><span>{order.address}</span></p>}
     <div className="record-status"><label>Estado<StatusSelect label="Estado del pedido" value={order.status} options={ORDER_STATUSES} onChange={(status) => onChange(status, order.paymentStatus)} /></label><label>Pago<StatusSelect label="Pago del pedido" value={order.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(order.status, paymentStatus)} /></label></div>
     {invoiceNote(invoice)}
-    <CardActions phone={order.phone} waText={`Hola ${order.customerName.split(' ')[0]}, te escribimos de ELA sobre tu pedido ${order.orderNumber}.`} onOpen={onOpen} onInvoice={onInvoice} invoice={invoice} onDelete={onDelete} />
+    <CardActions phone={order.phone} waText={`Hola ${order.customerName.split(' ')[0]}, te escribimos de ${shopName()} sobre tu pedido ${order.orderNumber}.`} onOpen={onOpen} onInvoice={onInvoice} invoice={invoice} onDelete={onDelete} />
   </article>
 }
 
@@ -1332,7 +1335,7 @@ function AppointmentCard({ item, invoice, onChange, onOpen, onInvoice, onDelete 
     {item.notes && <p className="record-meta">Nota: {item.notes}</p>}
     <div className="record-status"><label>Estado<StatusSelect label="Estado de la cita" value={item.status} options={APPOINTMENT_STATUSES} onChange={(status) => onChange(status, item.paymentStatus)} /></label><label>Pago<StatusSelect label="Pago de la cita" value={item.paymentStatus} options={PAYMENT_STATUSES} onChange={(paymentStatus) => onChange(item.status, paymentStatus)} /></label></div>
     {invoiceNote(invoice)}
-    <CardActions phone={item.phone} waText={`Hola ${item.customerName.split(' ')[0]}, te escribimos de ELA para confirmar tu cita de ${item.serviceName} el ${niceDate(item.date).toLowerCase()} a las ${niceTime(item.time)}.`} onOpen={onOpen} onInvoice={onInvoice} invoice={invoice} onDelete={onDelete} />
+    <CardActions phone={item.phone} waText={`Hola ${item.customerName.split(' ')[0]}, te escribimos de ${shopName()} para confirmar tu cita de ${item.serviceName} el ${niceDate(item.date).toLowerCase()} a las ${niceTime(item.time)}.`} onOpen={onOpen} onInvoice={onInvoice} invoice={invoice} onDelete={onDelete} />
   </article>
 }
 
@@ -1391,7 +1394,7 @@ function InvoiceBox({ invoice, doc, payments, onPay }: { invoice: Invoice; doc: 
 }
 
 function OrderDetail({ order, invoiceBox, canTrash, onClose, onDelete, onChange }: { order: Order; invoiceBox: React.ReactNode; canTrash: boolean; onClose: () => void; onDelete: () => void; onChange: (status: string, paymentStatus: string) => void }) {
-  const wa = waLink(order.phone, `Hola ${order.customerName.split(' ')[0]}, te escribimos de ELA sobre tu pedido ${order.orderNumber}.`)
+  const wa = waLink(order.phone, `Hola ${order.customerName.split(' ')[0]}, te escribimos de ${shopName()} sobre tu pedido ${order.orderNumber}.`)
   return <div className="modal-wrap" onClick={onClose}><div className="modal-card detail-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close icon-button" onClick={onClose} aria-label="Cerrar"><X /></button>
     <span className="drawer-kicker">PEDIDO {order.orderNumber} · {shortDate(order.createdAt)}</span>
     <h2>{order.customerName}</h2>
@@ -1405,7 +1408,7 @@ function OrderDetail({ order, invoiceBox, canTrash, onClose, onDelete, onChange 
 }
 
 function AppointmentDetail({ item, invoiceBox, canTrash, onClose, onDelete, onChange }: { item: Appointment; invoiceBox: React.ReactNode; canTrash: boolean; onClose: () => void; onDelete: () => void; onChange: (status: string, paymentStatus: string) => void }) {
-  const wa = waLink(item.phone, `Hola ${item.customerName.split(' ')[0]}, te escribimos de ELA para confirmar tu cita de ${item.serviceName} el ${niceDate(item.date).toLowerCase()} a las ${niceTime(item.time)}.`)
+  const wa = waLink(item.phone, `Hola ${item.customerName.split(' ')[0]}, te escribimos de ${shopName()} para confirmar tu cita de ${item.serviceName} el ${niceDate(item.date).toLowerCase()} a las ${niceTime(item.time)}.`)
   return <div className="modal-wrap" onClick={onClose}><div className="modal-card detail-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close icon-button" onClick={onClose} aria-label="Cerrar"><X /></button>
     <span className="drawer-kicker">CITA {item.appointmentNumber}</span>
     <h2>{item.customerName}</h2>
@@ -1467,8 +1470,8 @@ function ContentEditor({ plan, values, dirty, onChange, onUpload, onSave, busy, 
     notificationEmail: 'Cada pedido o cita nueva envía un correo con los detalles. Si son varios correos, sepáralos con coma. Este dato no se muestra en la tienda.',
     paymentMethods: 'Se muestran en el pie de la tienda. Sepáralos con coma, ej.: Efectivo, Transferencia. Déjalo vacío para no mostrarlos.',
     whatsapp: 'Solo números, con el 1 del país. Ej.: 18095551234',
-    instagram: 'Con o sin @. Ej.: @ela.esencia',
-    tiktok: 'Con o sin @. Ej.: @ela.esencia',
+    instagram: 'Con o sin @. Ej.: @tu.negocio',
+    tiktok: 'Con o sin @. Ej.: @tu.negocio',
   }
   const longFields = ['heroDescription', 'storyText', 'catalogDescription', 'servicesDescription', 'guaranteeTerms']
   return <section className="content-editor">

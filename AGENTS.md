@@ -2,7 +2,7 @@
 
 ## Architecture
 
-ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un negocio de belleza que vende dos cosas distintas bajo un mismo catálogo: **servicios** agendables (diseño de cejas, pestañas) y **productos** artesanales comprables (jabones, mantequillas). Los datos públicos de la tienda y las operaciones de administración usan server functions de TanStack. Los registros estructurados persisten en Postgres en Neon (vía el driver `neon-http` de Drizzle), las imágenes nuevas se guardan en Cloudflare R2 (bucket `ela-esencia-fotos`, binding `FOTOS`) y se sirven desde `/fotos/<nombre>` (`src/lib/fotos.ts`, `src/routes/fotos/$.ts`; si no hubiera R2, vuelve sola a GitHub), la autenticación de admin es una única contraseña compartida (`ADMIN_PASSWORD`) con cookie de sesión firmada, y los nuevos pedidos/citas disparan opcionalmente un correo de aviso vía Resend.
+Alma Esencial (antes la web de una clienta llamada «Ela Esencia») es una aplicación TanStack Start desplegada en Cloudflare Workers, para un negocio de belleza que vende dos cosas distintas bajo un mismo catálogo: **servicios** agendables (diseño de cejas, pestañas) y **productos** artesanales comprables (jabones, mantequillas). Los datos públicos de la tienda y las operaciones de administración usan server functions de TanStack. Los registros estructurados persisten en Postgres en Neon (vía el driver `neon-http` de Drizzle), las imágenes nuevas se guardan en Cloudflare R2 (bucket `ela-esencia-fotos`, binding `FOTOS`) y se sirven desde `/fotos/<nombre>` (`src/lib/fotos.ts`, `src/routes/fotos/$.ts`; si no hubiera R2, vuelve sola a GitHub), la autenticación de admin es una única contraseña compartida (`ADMIN_PASSWORD`) con cookie de sesión firmada, y los nuevos pedidos/citas disparan opcionalmente un correo de aviso vía Resend.
 
 ## Key Directories
 
@@ -26,7 +26,7 @@ ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un 
 - Neon Postgres para registros consultables, Cloudflare R2 para las fotos subidas (GitHub solo como respaldo).
 - Cada mutación administrativa del servidor está protegida con `requireAdmin()` / `verifySession()`.
 - Genera una migración después de cada cambio de schema con `pnpm db:generate`.
-- Conserva la dirección visual crema, dorado y serif elegante (inspirada en el flyer original de ELA) salvo que el dueño del producto pida un rediseño.
+- Conserva la dirección visual crema, dorado y serif elegante salvo que el dueño del producto pida un rediseño.
 - Un `product` tiene un campo `kind`: `'servicio'` (se agenda, usa `durationMinutes`, ignora `stock`) o `'producto'` (se compra, usa `stock`, ignora `durationMinutes`).
 
 ## Non-obvious Decisions
@@ -48,12 +48,12 @@ ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un 
 - **La tienda pública no recibe `notificationEmail`** (ver `PRIVATE_CONTENT_KEYS` en `store.ts`).
 - El número de WhatsApp se limpia (solo dígitos) antes de armar el enlace `wa.me`, así funciona aunque se escriba "+1 (829) 000-0000".
 - El módulo de facturas PDF (`src/lib/invoice.ts`, jsPDF + html2canvas) se carga solo al descargar o compartir, para que el panel abra más rápido.
-- La bolsa se guarda en el navegador (`localStorage`, clave `ela-cart`).
+- La bolsa se guarda en el navegador (`localStorage`, clave `tienda-bolsa`).
 
-## App "ELA Admin" y notificaciones (igual que JB Tech Store)
+## App «Alma Admin» y notificaciones (igual que JB Tech Store)
 
-- **Tienda y panel son 2 apps separadas.** La tienda (`public/site.webmanifest`, id y `start_url` = `/`) siempre abre en el inicio. Está en inicio, políticas, términos y en `/admin` mientras no se haya entrado. "ELA Admin" (`public/admin.webmanifest`, `scope: /admin`) solo se ofrece con la sesión abierta, y se quita al salir del panel. Así una clienta que instale desde el menú de Chrome (⋮ → Instalar / Agregar a la pantalla principal) nunca se lleva el panel.
-- Efecto aceptado: desde la app ELA Admin, "Ver la tienda" abre la tienda con la barra de dirección arriba (es otra app).
+- **Tienda y panel son 2 apps separadas.** La tienda (`public/site.webmanifest`, id y `start_url` = `/`) siempre abre en el inicio. Está en inicio, políticas, términos y en `/admin` mientras no se haya entrado. «Alma Admin» (`public/admin.webmanifest`, `scope: /admin`) solo se ofrece con la sesión abierta, y se quita al salir del panel. Así una clienta que instale desde el menú de Chrome (⋮ → Instalar / Agregar a la pantalla principal) nunca se lleva el panel.
+- Efecto aceptado: desde la app Alma Admin, "Ver la tienda" abre la tienda con la barra de dirección arriba (es otra app).
 - Cada cita o pedido nuevo de la tienda manda una notificación push a los aparatos activados (Admin → Ajustes → App y avisos). Al tocarla abre `/admin?tab=citas` o `/admin?tab=pedidos`.
 - `src/lib/push.ts`: Web Push hecho a mano con WebCrypto (copiado de JB Tech Store). `public/admin-sw.js`: service worker con alcance `/admin`.
 - Tabla `push_subscriptions`: se crea sola con `ensureSchema()` en `store.ts`. Las claves VAPID se crean solas y se guardan en `content` (key `vapidKeys`); nunca van al navegador ni al editor de textos.
@@ -83,7 +83,7 @@ ELA es una aplicación TanStack Start desplegada en Cloudflare Workers, para un 
 
 - **Bolsa como JB:** al agregar NO se abre la bolsa; sale un aviso con "Ver bolsa". La cantidad nunca baja de 1 con "−" (para quitar está la papelera) ni pasa de la existencia; se puede escribir a mano (`QtyInput`).
 - **Animaciones al bajar:** lo que ya está en pantalla se muestra enseguida y cada sección se anima una sola vez (`useScrollReveal` + clase `reveal-on` en `<html>`). Antes todo empezaba invisible y las secciones del borde se prendían y apagaban (parpadeo).
-- **Íconos de la tienda** (`android-chrome-*`, `apple-touch-icon`): fondo crema #f0e4d4 completo con "Ela" centrado, sin la mancha recortada; en el manifest llevan `?v=2` para que los teléfonos los actualicen.
+- **Íconos de la tienda** (`android-chrome-*`, `apple-touch-icon`): fondo crema #f0e4d4 completo con «Alma» centrado (Cormorant Garamond cursiva), sin la mancha recortada; los favicon llevan una «A». En el manifest y en `__root.tsx` llevan `?v=3` para que los teléfonos los actualicen (súbelo si los cambias).
 
 ## Varias fotos por artículo
 
@@ -103,7 +103,7 @@ La web se vende en 3 planes con **el mismo código**; el plan lo decide una vari
 **Qué lleva cada plan (RD$500 / RD$750 / RD$1,000 al mes; entrada = el doble: RD$1,000 / RD$1,500 / RD$2,000):**
 - **Básico:** catálogo de productos y servicios con fotos, precios, categorías y buscador; botón «Pedir por WhatsApp» en cada producto y «Agendar por WhatsApp» en cada servicio; compartir. Panel: Inicio, Catálogo (productos, servicios, fotos) y Textos de la web. Sin bolsa, sin citas en la web, sin pedidos guardados, sin existencias, sin números.
 - **Profesional:** todo lo del Básico + bolsa y pedidos en la web (`carrito`), citas en la web (`citas`), pedidos y citas en el panel con su estado (`pedidos`), existencia de cada producto (`existencia`), métodos de pago (`metodosPago`), Cobros: facturas en PDF y abonos (`cobros`) y Clientes (`clientes`). **Sin lotes:** las unidades se ponen directo al crear/editar el producto y al vender siguen bajando solas (sale del costo actual del producto, como las existencias viejas sin compra).
-- **Completo:** todo + «Mis citas y pedidos» (`historial`), «Enviar a una amiga» (`enviarAmiga`), retoque gratis y días para cambio (`retoque`), inventario por lotes «Reponer»/Compras (`lotes`), venta por fuera (`ventaFuera`), gastos (`gastos`), Finanzas (`finanzas`), app «ELA Admin» con notificaciones (`app`), avisos por correo (`correo`) y papelera (`papelera`).
+- **Completo:** todo + «Mis citas y pedidos» (`historial`), «Enviar a una amiga» (`enviarAmiga`), retoque gratis y días para cambio (`retoque`), inventario por lotes «Reponer»/Compras (`lotes`), venta por fuera (`ventaFuera`), gastos (`gastos`), Finanzas (`finanzas`), app «Alma Admin» con notificaciones (`app`), avisos por correo (`correo`) y papelera (`papelera`).
 
 **Qué pasa con lo que el plan no incluye:**
 - Tienda pública: no sale (sin botones muertos). Ej.: en Básico, en vez de «Agregar» sale «Pedir por WhatsApp».
@@ -118,7 +118,7 @@ La web se vende en 3 planes con **el mismo código**; el plan lo decide una vari
 
 ## Plan Completo: funciones que vienen de JB Tech Store (con otro nombre y otro diseño)
 
-- **«Mis citas y pedidos»** (`historial`): cada cita y cada pedido nuevo guarda una clave secreta (`appointments.access_token`, `orders.access_token`; se crean siempre, también en otros planes). El teléfono de la clienta guarda número + clave (`localStorage` `ela-mis-citas-pedidos`) y sus datos para la próxima vez (`ela-clienta`). El botón sale arriba (ícono de calendario con corazón) y en el menú cuando ya hay algo guardado; el cajón tiene pestañas Citas / Pedidos. Cada cita sale con su fecha en un cuadrito, sus pasos (Solicitada → Confirmada → Realizada) y el retoque. Mientras la cita esté «Pendiente» la clienta puede **cambiar la fecha** (`moveMyAppointment`: actualiza la cita y el concepto de su factura, deja nota y avisa a la app) y, si no tiene abonos, **cancelarla** (`cancelMyAppointment`). Un pedido «Pendiente» sin abonos se puede **cambiar** (se cancela y lo que tenía vuelve a la bolsa) o **cancelar** (`cancelMyOrder`: devuelve las unidades y anula la factura sin abonos). Lectura: `getMyHistory`. A la clienta nunca se le manda el costo.
+- **«Mis citas y pedidos»** (`historial`): cada cita y cada pedido nuevo guarda una clave secreta (`appointments.access_token`, `orders.access_token`; se crean siempre, también en otros planes). El teléfono de la clienta guarda número + clave (`localStorage` `tienda-mis-citas-pedidos`) y sus datos para la próxima vez (`tienda-clienta`). El botón sale arriba (ícono de calendario con corazón) y en el menú cuando ya hay algo guardado; el cajón tiene pestañas Citas / Pedidos. Cada cita sale con su fecha en un cuadrito, sus pasos (Solicitada → Confirmada → Realizada) y el retoque. Mientras la cita esté «Pendiente» la clienta puede **cambiar la fecha** (`moveMyAppointment`: actualiza la cita y el concepto de su factura, deja nota y avisa a la app) y, si no tiene abonos, **cancelarla** (`cancelMyAppointment`). Un pedido «Pendiente» sin abonos se puede **cambiar** (se cancela y lo que tenía vuelve a la bolsa) o **cancelar** (`cancelMyOrder`: devuelve las unidades y anula la factura sin abonos). Lectura: `getMyHistory`. A la clienta nunca se le manda el costo.
 - **«Enviar a una amiga»** (`enviarAmiga`): en cada servicio, producto y ficha. Comparte `/catalogo/<id>` (`src/routes/catalogo.$id.tsx`), que abre la tienda con esa ficha y trae las etiquetas `og:` con su foto, su nombre y su precio. El tamaño de la portada (`og:image:width/height`) está en `index.tsx`, no en `__root.tsx`.
 - **Retoque y cambios** (`retoque`): `products.guarantee_days` (0 = no tiene). En un servicio son días de **retoque gratis** después de la cita (botones: Sin retoque, 7, 15, 21, 30 días); en un producto, días para **cambio** después de recibirlo (Sin cambio, 3, 7, 15, 30). Se copia a la cita (`appointments.guarantee_days`) y a la línea del pedido (`items[].guaranteeDays`). Sale en la tienda, en «Mis citas y pedidos», en las tarjetas del panel y en la factura («Retoque gratis hasta el 5 de noviembre»), con las condiciones de Textos de la web → «Retoque y cambios» (`guaranteeTerms`).
 
@@ -126,3 +126,14 @@ La web se vende en 3 planes con **el mismo código**; el plan lo decide una vari
 
 - Un producto o servicio con precio 0 sale como **«Precio a consultar»** (antes salía «RD$0.00»). En la tienda, en vez de «Agregar» tiene **«Preguntar»**, que abre WhatsApp con «¿Cuál es el precio de …?». No se puede pedir por la web: `addToCart` lo manda a WhatsApp y el servidor rechaza el pedido («… no tiene precio todavía»). Un servicio sin precio se puede agendar igual.
 - Al abrir la bolsa se quita el aviso «Agregado a tu bolsa» para que no tape el botón de continuar.
+
+## Alma Esencial (noviembre 2026): la web ya no es de Ela
+
+Era la web de una clienta («Ela Esencia»). El dueño (GADR Net) la vende ahora como demo con otra marca: **Alma Esencial**, lema «Belleza que nace de ti.». No volver a poner nada de la clienta: ni su nombre, ni su número, ni sus redes, ni su ciudad, ni sus fotos o logo.
+- **La marca sale de un solo lugar:** `src/lib/brand.ts` (`BRAND`: nombre, lema, descripción y dirección de la web). Lo usan las etiquetas para compartir, el panel, las facturas, los correos y las pantallas de error. En la tienda, el logo sale del texto «Nombre de la marca» del panel (`content.brandName`): la primera palabra en cursiva (Mrs Saint Delafield) y el resto en versalitas debajo (`splitBrand`). Al vender la web: cambia `brand.ts`, los dos manifest de `public/`, los íconos y los textos del panel.
+- **Íconos y portada** (`og-cover.jpg`, que también sale en el catálogo de gadrnet.com): se dibujaron con Playwright con las letras de la web (Cormorant Garamond, Mrs Saint Delafield y DM Mono). La portada lleva la foto del facial en un arco.
+- **Artículos de ejemplo:** 4 servicios (cejas, pestañas por grupito, lifting de pestañas, limpieza facial) y 7 productos (3 jabones, exfoliante de café, mantequilla de karité, aceite de almendras, bálsamo labial). Fotos de **Pexels** (gratis, también para vender) en `public/catalogo/`; como no empiezan con `/fotos/`, la papelera de imágenes nunca las borra. Fotos (número de Pexels): portada 3985329, cejas 5177994, pestañas 8554941, lifting 5128220, facial 5069494, jabón de avena 6683036, de rosa mosqueta 6958981, de coco 6690197, exfoliante 6621308, mantequilla 7795687, aceite 7797734, bálsamo 374769.
+- Las fotos que había subido la clienta se mandaron a la papelera de imágenes (se borran solas de R2 a los 30 días).
+- **Contacto de la demo:** WhatsApp del dueño (+1 849 720 6071), Instagram @gadr_net, Santo Domingo. En una web nueva (`defaultContent`) el contacto empieza vacío: lo pone cada dueña.
+- **Falta (cuando haya dominio):** la dirección `elaesencia.gadrnet.workers.dev`, el nombre del Worker y del bucket R2 (`ela-esencia-fotos`) y el nombre del repo (`Ela-esencia`). Al tener el dominio: cambiar `BRAND.site` y, si se quiere, un Worker y un repo nuevos con el historial limpio (como RD Tour).
+- Base de datos: Neon «Ela esencia» `proud-haze-45972229`. Antes del cambio se guardó la rama `respaldo-antes-de-alma-esencial`.

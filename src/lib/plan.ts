@@ -1,5 +1,5 @@
 // ───────────────────────────────────────────────────────────────────────
-// PLANES de ELA Esencia — el ÚNICO lugar donde se decide qué lleva cada plan.
+// PLANES de la tienda — el ÚNICO lugar donde se decide qué lleva cada plan.
 // Todo el código pregunta aquí con puede(plan, 'funcion'); no hay "if plan ===".
 // Es el mismo código para los 3 planes: solo cambia la variable PLAN.
 // (Este archivo no usa nada del servidor: lo pueden importar la tienda y el panel.)
@@ -28,7 +28,7 @@ export const FUNCIONES = {
   ventaFuera: 'completo', //     Venta por fuera de la web
   gastos: 'completo', //         Gastos del negocio y personales
   finanzas: 'completo', //       Finanzas y ganancias
-  app: 'completo', //            App «ELA Admin» con notificaciones
+  app: 'completo', //            App «<marca> Admin» con notificaciones
   correo: 'completo', //         Avisos por correo
   papelera: 'completo', //       Papelera (restaurar lo borrado)
   historial: 'completo', //      «Mis citas y pedidos»: la clienta sigue, cambia o cancela lo suyo

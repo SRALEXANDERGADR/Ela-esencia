@@ -1,18 +1,18 @@
-# ELA — La belleza de ser tú.
+# Alma Esencial — Belleza que nace de ti.
 
-Tienda web completa para ELA (belleza, cuidado y bienestar): agenda de **servicios** (diseño de cejas, pestañas por grupito...) y venta de **productos artesanales** (jabones, mantequillas corporales), con panel administrativo protegido, facturación con folios y abonos parciales, y editor de contenido del sitio.
+Tienda web completa para un negocio de belleza (Alma Esencial: belleza, cuidado y bienestar): agenda de **servicios** (cejas, pestañas, faciales...) y venta de **productos hechos a mano** (jabones, mantequillas y aceites corporales), con panel administrativo protegido, facturación con folios y abonos parciales, y editor de contenido del sitio.
 
 Este proyecto combina lo mejor de las tiendas previas del negocio:
 
 - La base técnica y el patrón de tienda + carrito + checkout de **Ventas** y **Ritual Cobre** (TanStack Start + Neon + Cloudflare Workers).
 - El editor de contenido completo y el aviso automático por correo de **Ritual Cobre**.
-- El sistema de **facturación con folio, badge de estado, descarga en PDF y recibo de abono compartible por WhatsApp** de **Alexander Perfiles** (`factura.js`), adaptado a la identidad de ELA.
-- Un flujo nuevo de **citas** (agenda de servicios), que no existía en ninguna de las tiendas anteriores, ya que ELA vende tanto servicios agendables como productos físicos.
+- El sistema de **facturación con folio, badge de estado, descarga en PDF y recibo de abono compartible por WhatsApp** de **Alexander Perfiles** (`factura.js`), adaptado a la identidad de la tienda.
+- Un flujo nuevo de **citas** (agenda de servicios), que no existía en ninguna de las tiendas anteriores, ya que la tienda vende tanto servicios agendables como productos físicos.
 
 ## Tecnologías
 
 - TanStack Start, React 19 y TypeScript
-- Tailwind CSS 4 y CSS personalizado (identidad crema, dorado y serif elegante, inspirada en el flyer de ELA)
+- Tailwind CSS 4 y CSS personalizado (identidad crema, dorado y serif elegante)
 - **Postgres en Neon** con Drizzle ORM para servicios/productos, clientes, pedidos, citas, facturas y abonos
 - **GitHub (API de Contents)** para alojar las imágenes subidas desde el panel — se sirven desde `raw.githubusercontent.com`, sin necesidad de crear buckets
 - Sesión de administrador protegida con `ADMIN_PASSWORD` (Cloudflare Secret) + cookie firmada con `SESSION_SECRET`
@@ -55,7 +55,7 @@ Este proyecto combina lo mejor de las tiendas previas del negocio:
 5. (Opcional) Para recibir el aviso por correo de cada pedido y cada cita, crea una cuenta en [Resend](https://resend.com) y define `wrangler secret put RESEND_API_KEY` (y opcionalmente `RESEND_FROM_EMAIL`). Luego escribe el correo de destino en **Panel administrativo → Editor de contenido → Notificaciones**.
 6. Despliega: `pnpm deploy`.
 7. Actualiza el número de WhatsApp, la ubicación, las redes sociales y todos los textos desde **Panel administrativo → Editor de contenido**.
-8. Carga los servicios y productos reales de ELA (con sus fotos) desde **Panel administrativo → Catálogo** — el proyecto trae datos de ejemplo basados en el flyer original que puedes editar o eliminar.
+8. Carga los servicios y productos reales de la clienta (con sus fotos) desde **Panel administrativo → Catálogo** — el proyecto trae artículos de ejemplo (fotos de Pexels en `public/catalogo`) que puedes editar o eliminar.
 
 ## Sobre las facturas y los abonos
 

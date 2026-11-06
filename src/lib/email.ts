@@ -10,6 +10,7 @@
 // nada: un fallo o falta de configuración en el correo nunca debe
 // interrumpir el registro del pedido/cita del cliente.
 
+import { BRAND } from './brand'
 import { formatMoney as money } from './money'
 
 const shortDate = (value: string | Date) => new Intl.DateTimeFormat('es-DO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
@@ -65,7 +66,7 @@ function wrapEmail(headerLabel: string, title: string, subtitle: string, bodyHtm
             ${bodyHtml}
             <tr>
               <td style="padding:28px 32px 32px;">
-                <p style="margin:0;color:#999;font-size:12px;text-align:center;">Este correo se generó automáticamente desde la tienda de ELA — La belleza de ser tú.</p>
+                <p style="margin:0;color:#999;font-size:12px;text-align:center;">Este correo se generó automáticamente desde la tienda de ${escapeHtml(BRAND.name)} — ${escapeHtml(BRAND.tagline)}</p>
               </td>
             </tr>
           </table>
@@ -194,7 +195,7 @@ async function sendResendOne(env: Env, to: string, subject: string, html: string
     return
   }
   try {
-    const from = env.RESEND_FROM_EMAIL || 'ELA <onboarding@resend.dev>'
+    const from = env.RESEND_FROM_EMAIL || `${BRAND.name} <onboarding@resend.dev>`
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {

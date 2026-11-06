@@ -31,7 +31,7 @@ export async function uploadImage(
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-      'User-Agent': 'ela-esencia-app',
+      'User-Agent': 'gadr-tienda',
       Accept: 'application/vnd.github+json',
       'Content-Type': 'application/json',
     },
@@ -72,7 +72,7 @@ export async function deleteImageFile(env: Env, path: string): Promise<void> {
   const branch = env.GITHUB_BRANCH || 'main'
   const headers = {
     Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-    'User-Agent': 'ela-esencia-app',
+    'User-Agent': 'gadr-tienda',
     Accept: 'application/vnd.github+json',
   }
 

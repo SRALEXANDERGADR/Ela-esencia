@@ -6,6 +6,7 @@ import { ShareButton } from './ShareButton'
 import { formatMoney } from '@/lib/money'
 import { puede, type Plan } from '@/lib/plan'
 import { LeafBloom, LeafBranch, LeafSpray } from './LeafBranch'
+import { BRAND, splitBrand } from '@/lib/brand'
 
 /** Mueve suavemente las 4 matas decorativas de las esquinas con el
  * scroll (un "parallax" sutil), para que acompañen al usuario al subir
@@ -46,7 +47,7 @@ type Product = { id: number; kind: string; name: string; category: string; descr
 type Props = { data: { products: Product[]; content: Record<string, string>; plan?: Plan }; initialDetailId?: number }
 
 const money = formatMoney
-const CART_KEY = 'ela-cart'
+const CART_KEY = 'tienda-bolsa'
 const PLACEHOLDER = '/placeholder.png'
 const handle = (value: string) => (value || '').trim().replace(/^@+/, '')
 const waNumber = (value: string) => (value || '').replace(/\D/g, '')
@@ -56,8 +57,8 @@ const prettyDate = (iso: string) => { const [y, m, d] = iso.split('-').map(Numbe
 // ─── Mis citas y pedidos (plan Completo) ───
 // El teléfono guarda el número y la clave secreta de cada cita y pedido, y
 // los datos de la clienta para no escribirlos otra vez.
-const HISTORY_KEY = 'ela-mis-citas-pedidos'
-const CLIENT_KEY = 'ela-clienta'
+const HISTORY_KEY = 'tienda-mis-citas-pedidos'
+const CLIENT_KEY = 'tienda-clienta'
 type HistoryKey = { number: string; token: string }
 type HistoryKeys = { orders: HistoryKey[]; appointments: HistoryKey[] }
 type SavedClient = { name: string; phone: string; email: string; address: string }
@@ -191,13 +192,15 @@ function QtyInput({ value, max, onChange }: { value: number; max: number; onChan
     onBlur={() => setDraft(null)} />
 }
 
-/** Logotipo tipográfico de ELA: "Ela" en trazo cursivo + "esencia" en
- * versalitas espaciadas debajo — sin insignia circular. */
-function BrandMark({ className = '' }: { className?: string }) {
+/** Logotipo de letras con el nombre de la marca (Textos de la web → «Nombre
+ * de la marca»): la primera palabra en trazo cursivo y el resto en versalitas
+ * espaciadas debajo — sin insignia circular. Ej.: «Alma» + «Esencial». */
+function BrandMark({ name, className = '' }: { name?: string; className?: string }) {
+  const { main, sub } = splitBrand(name || BRAND.name)
   return (
     <span className={`brand-mark ${className}`}>
-      <span className="brand-mark-main">Ela</span>
-      <span className="brand-mark-sub">esencia</span>
+      <span className="brand-mark-main">{main}</span>
+      {sub && <span className="brand-mark-sub">{sub}</span>}
     </span>
   )
 }
@@ -252,6 +255,7 @@ function useScrollReveal(deps: unknown[]) {
 
 export function Storefront({ data, initialDetailId }: Props) {
   const { products, content: copy } = data
+  const brand = (copy.brandName || '').trim() || BRAND.name
   const router = useRouter()
   // Qué trae el plan (ver src/lib/plan.ts). Lo que el plan no incluye NO sale:
   // sin botones muertos. Sin plan definido = completo.
@@ -511,7 +515,7 @@ export function Storefront({ data, initialDetailId }: Props) {
    * del teléfono o, si no hay, copia el enlace). */
   async function sendToFriend(product: Product) {
     const url = `${window.location.origin}/catalogo/${product.id}`
-    const text = `Mira esto de ${copy.brandName || 'ELA'}: ${product.name} · ${product.price > 0 ? money(product.price) : 'precio a consultar'}`
+    const text = `Mira esto de ${brand}: ${product.name} · ${product.price > 0 ? money(product.price) : 'precio a consultar'}`
     const nav = navigator as Navigator & { share?: (data: ShareData) => Promise<void> }
     if (nav.share) {
       try { await nav.share({ title: product.name, text, url }); return } catch (caught) { if ((caught as Error)?.name === 'AbortError') return }
@@ -563,9 +567,9 @@ export function Storefront({ data, initialDetailId }: Props) {
     <header className="topbar">
       <div className="topbar-left">
         <button className="icon-button" onClick={() => setMenuOpen(true)} aria-label="Abrir menú"><Menu /></button>
-        <ShareButton title={copy.brandName} />
+        <ShareButton title={brand} />
       </div>
-      <a className="wordmark" href="#inicio"><BrandMark /></a>
+      <a className="wordmark" href="#inicio"><BrandMark name={brand} /></a>
       <nav className="desktop-nav"><a href="#servicios">{copy.navServices}</a><a href="#catalogo">{copy.navCatalog}</a><a href="#beneficios">{copy.navBenefits}</a><a href="#contacto">{copy.navContact}</a></nav>
       <div className="topbar-actions">
         {canHistory && historyTotal > 0 && <button className="history-button" onClick={() => openHistory()} aria-label="Mis citas y pedidos"><CalendarHeart size={19} /><span>Mis citas</span></button>}
@@ -575,8 +579,8 @@ export function Storefront({ data, initialDetailId }: Props) {
 
     <div className={`overlay ${menuOpen ? 'visible' : ''}`} onClick={() => setMenuOpen(false)} />
     <aside className={`side-menu ${menuOpen ? 'open' : ''}`}>
-      <div className="drawer-head"><BrandMark className="mini-mark" /><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú"><X /></button></div>
-      <p className="drawer-kicker">Explora ELA</p>
+      <div className="drawer-head"><BrandMark name={brand} className="mini-mark" /><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="Cerrar menú"><X /></button></div>
+      <p className="drawer-kicker">Explora {brand}</p>
       <a href="#servicios" onClick={() => setMenuOpen(false)}>{copy.navServices} <ArrowRight /></a>
       <a href="#catalogo" onClick={() => setMenuOpen(false)}>{copy.navCatalog} <ArrowRight /></a>
       <a href="#beneficios" onClick={() => setMenuOpen(false)}>{copy.navBenefits} <ArrowRight /></a>
@@ -589,24 +593,24 @@ export function Storefront({ data, initialDetailId }: Props) {
     </aside>
 
     <main>
-      <section className="ela-hero" id="inicio">
+      <section className="home-hero" id="inicio">
         <BlockSprig left={LeafBranch} right={LeafBloom} />
-        <p className="ela-eyebrow reveal"><Sparkles size={14} />{copy.eyebrow}</p>
+        <p className="home-eyebrow reveal"><Sparkles size={14} />{copy.eyebrow}</p>
         <h1 className="reveal delay-1">{copy.heroTitle}</h1>
-        <p className="ela-hero-lede reveal delay-1">{copy.heroDescription}</p>
+        <p className="home-hero-lede reveal delay-1">{copy.heroDescription}</p>
         <a className="primary-button reveal delay-1" href="#servicios">{copy.heroCta}<ArrowRight /></a>
-        <div className="ela-hero-banner reveal delay-1"><img src={copy.heroImage || PLACEHOLDER} alt="ELA — belleza y cuidado" fetchPriority="high" onError={onImgError} /></div>
+        <div className="home-hero-banner reveal delay-1"><img src={copy.heroImage || PLACEHOLDER} alt={`${brand} — belleza y cuidado`} fetchPriority="high" onError={onImgError} /></div>
       </section>
 
-      <section className="ela-manifesto" id="beneficios">
+      <section className="home-manifesto" id="beneficios">
         <BlockSprig left={LeafSpray} right={LeafBranch} />
-        <div className="ela-section-heading reveal"><span>Nuestro compromiso</span><h2>{copy.benefitsTitle}</h2></div>
-        <div className="ela-manifesto-grid">{[1, 2, 3].map((number) => <article className={`reveal delay-${number}`} key={number}><span>0{number}</span><h3>{copy[`benefit${number}Title`]}</h3><p>{copy[`benefit${number}Text`]}</p></article>)}</div>
+        <div className="home-section-heading reveal"><span>Nuestro compromiso</span><h2>{copy.benefitsTitle}</h2></div>
+        <div className="home-manifesto-grid">{[1, 2, 3].map((number) => <article className={`reveal delay-${number}`} key={number}><span>0{number}</span><h3>{copy[`benefit${number}Title`]}</h3><p>{copy[`benefit${number}Text`]}</p></article>)}</div>
       </section>
 
       <section className="catalog services-section" id="servicios">
         <BlockSprig left={LeafBloom} right={LeafSpray} />
-        <div className="ela-section-heading reveal"><span>Servicios de belleza</span><h2>{copy.servicesTitle}</h2><p>{copy.servicesDescription}</p></div>
+        <div className="home-section-heading reveal"><span>Servicios de belleza</span><h2>{copy.servicesTitle}</h2><p>{copy.servicesDescription}</p></div>
         <div className="service-grid">
           {services.map((service, index) => <article className={`service-card reveal delay-${(index % 3) + 1}`} key={service.id}>
             <div className="service-image"><Gallery photos={photosOf(service)} alt={service.name} onOpen={() => setDetail(service)} /></div>
@@ -627,7 +631,7 @@ export function Storefront({ data, initialDetailId }: Props) {
 
       <section className="catalog" id="catalogo">
         <BlockSprig left={LeafBranch} right={LeafBloom} />
-        <div className="ela-section-heading reveal"><span>Productos artesanales</span><h2>{copy.catalogTitle}</h2><p>{copy.catalogDescription}</p></div>
+        <div className="home-section-heading reveal"><span>Productos artesanales</span><h2>{copy.catalogTitle}</h2><p>{copy.catalogDescription}</p></div>
         <div className="catalog-layout">
           <aside className="filters reveal"><label><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar producto..." /></label><div className="category-list">{categories.map((item) => <button className={category === item ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}<span>{item === 'Todos' ? goods.length : goods.filter((product) => product.category === item).length}</span></button>)}</div></aside>
           <div className="product-list">{visibleProducts.map((product, index) => <article className={`product-row reveal delay-${(index % 3) + 1}`} key={product.id}>
@@ -643,18 +647,18 @@ export function Storefront({ data, initialDetailId }: Props) {
         </div>
       </section>
 
-      <section className="ela-story reveal" id="historia">
+      <section className="home-story reveal" id="historia">
         <BlockSprig left={LeafSpray} right={LeafSpray} />
-        <span className="ela-eyebrow">Nuestra historia</span>
+        <span className="home-eyebrow">Nuestra historia</span>
         <h2>{copy.storyTitle}</h2>
         <p>{copy.storyText}</p>
-        <div className="ela-story-signature">ELA</div>
+        <div className="home-story-signature">{brand}</div>
       </section>
     </main>
 
     <footer id="contacto">
       <BlockSprig left={LeafBranch} right={LeafBloom} />
-      <div className="footer-brand reveal"><BrandMark className="footer-mark" /><p>{copy.footerText}</p></div>
+      <div className="footer-brand reveal"><BrandMark name={brand} className="footer-mark" /><p>{copy.footerText}</p></div>
       <div className="reveal delay-1"><span>Conversemos</span><a className="whatsapp" href={`https://wa.me/${whatsapp}`} target="_blank" rel="noreferrer">Escríbenos por WhatsApp <ArrowRight /></a></div>
       <div className="reveal delay-2"><span>Horario</span><p>{copy.schedule}</p><p className="footer-location">{copy.location}</p>{canPayments && paymentMethods.length > 0 && <div className="footer-payments"><span>Métodos de pago</span><div className="payment-tags">{paymentMethods.map((method) => <b key={method}>{method}</b>)}</div></div>}</div>
       <div className="reveal delay-3"><span>Síguenos</span>{handle(copy.instagram) && <a className="social-line" href={`https://instagram.com/${handle(copy.instagram)}`} target="_blank" rel="noreferrer"><Instagram size={16} />@{handle(copy.instagram)}</a>}{handle(copy.tiktok) && <a className="social-line" href={`https://www.tiktok.com/@${handle(copy.tiktok)}`} target="_blank" rel="noreferrer"><Music2 size={16} />@{handle(copy.tiktok)}</a>}</div>
@@ -670,7 +674,7 @@ export function Storefront({ data, initialDetailId }: Props) {
       </div>
     </footer>
 
-    {whatsapp && <a className="wa-float" href={waHref('Hola ELA, quiero información.')} target="_blank" rel="noreferrer" aria-label="Escríbenos por WhatsApp"><MessageCircle /><span>¿Dudas? Escríbenos</span></a>}
+    {whatsapp && <a className="wa-float" href={waHref(`Hola ${brand}, quiero información.`)} target="_blank" rel="noreferrer" aria-label="Escríbenos por WhatsApp"><MessageCircle /><span>¿Dudas? Escríbenos</span></a>}
 
     <div className={`cart-toast ${toastVisible ? 'visible' : ''}`} role="status" aria-live="polite">
       {toast && <><img src={toast.image || PLACEHOLDER} alt="" onError={onImgError} /><div><strong>{toast.title}</strong><span>{toast.name}</span></div>{canCart && <button onClick={() => { setToastVisible(false); setCartOpen(true) }}>Ver bolsa</button>}</>}
@@ -684,7 +688,7 @@ export function Storefront({ data, initialDetailId }: Props) {
       <div className="cart-summary"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><p>La entrega se coordina después de confirmar el pedido.</p><button className="primary-button full" disabled={!cart.length} onClick={() => { setCartOpen(false); setCheckoutOpen(true) }}>Continuar al checkout <ArrowRight /></button></div>
     </aside>
 
-    {checkoutOpen && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}><X /></button>{confirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>PEDIDO RECIBIDO</span><h2>Gracias por confiar en ELA.</h2><p>Tu número de pedido es</p><strong>{confirmation.orderNumber}</strong><p>Total: {money(confirmation.total)}. Te contactaremos por WhatsApp para coordinar pago y entrega. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(confirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}{canHistory && <button className="history-cta" onClick={() => openHistory('pedidos')}><CalendarHeart size={16} />Ver mis citas y pedidos</button>}<button className="text-button" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">ÚLTIMO PASO</span><h2>{copy.checkoutTitle}</h2><p>Déjanos tus datos para coordinar pago y entrega.</p><form id="checkout-form" onSubmit={submitOrder}>{canHistory && client && <p className="saved-client">Usamos tus datos de la última vez. Cámbialos si hace falta.</p>}<input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} defaultValue={canHistory ? client?.name : undefined} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} defaultValue={canHistory ? client?.phone : undefined} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" defaultValue={canHistory ? client?.email : undefined} /><textarea required name="address" placeholder="Dirección de entrega" rows={3} autoComplete="street-address" maxLength={400} defaultValue={canHistory ? client?.address : undefined} />{error && <p className="form-error">{error}</p>}</form></div><div className="order-review"><h3>Resumen</h3>{cart.map((line) => <div key={line.productId}><span>{line.quantity} × {line.name}</span><strong>{money(line.quantity * line.price)}</strong></div>)}<div className="checkout-total"><span>Total</span><strong>{money(subtotal)}</strong></div><button form="checkout-form" disabled={submitting} className="primary-button full">{submitting ? 'Enviando...' : 'Enviar pedido'}<ArrowRight /></button></div></div>}</div></div>}
+    {checkoutOpen && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}><X /></button>{confirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>PEDIDO RECIBIDO</span><h2>Gracias por confiar en {brand}.</h2><p>Tu número de pedido es</p><strong>{confirmation.orderNumber}</strong><p>Total: {money(confirmation.total)}. Te contactaremos por WhatsApp para coordinar pago y entrega. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(confirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}{canHistory && <button className="history-cta" onClick={() => openHistory('pedidos')}><CalendarHeart size={16} />Ver mis citas y pedidos</button>}<button className="text-button" onClick={() => { setCheckoutOpen(false); setConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">ÚLTIMO PASO</span><h2>{copy.checkoutTitle}</h2><p>Déjanos tus datos para coordinar pago y entrega.</p><form id="checkout-form" onSubmit={submitOrder}>{canHistory && client && <p className="saved-client">Usamos tus datos de la última vez. Cámbialos si hace falta.</p>}<input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} defaultValue={canHistory ? client?.name : undefined} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} defaultValue={canHistory ? client?.phone : undefined} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" defaultValue={canHistory ? client?.email : undefined} /><textarea required name="address" placeholder="Dirección de entrega" rows={3} autoComplete="street-address" maxLength={400} defaultValue={canHistory ? client?.address : undefined} />{error && <p className="form-error">{error}</p>}</form></div><div className="order-review"><h3>Resumen</h3>{cart.map((line) => <div key={line.productId}><span>{line.quantity} × {line.name}</span><strong>{money(line.quantity * line.price)}</strong></div>)}<div className="checkout-total"><span>Total</span><strong>{money(subtotal)}</strong></div><button form="checkout-form" disabled={submitting} className="primary-button full">{submitting ? 'Enviando...' : 'Enviar pedido'}<ArrowRight /></button></div></div>}</div></div>}
 
     </>}
 
@@ -711,7 +715,7 @@ export function Storefront({ data, initialDetailId }: Props) {
 
     {canHistory && <><div className={`overlay ${historyOpen ? 'visible' : ''}`} onClick={() => setHistoryOpen(false)} />
     <aside className={`history-drawer ${historyOpen ? 'open' : ''}`} aria-hidden={!historyOpen} aria-label="Mis citas y pedidos">
-      <div className="drawer-head"><div><span className="drawer-kicker">TU HISTORIAL EN {String(copy.brandName || 'ELA').toUpperCase()}</span><h2>Mis citas y pedidos</h2></div><div className="history-head-actions"><button className="icon-button" onClick={() => void loadHistory()} disabled={historyLoading} aria-label="Actualizar"><RotateCw size={17} /></button><button className="icon-button" onClick={() => setHistoryOpen(false)} aria-label="Cerrar"><X /></button></div></div>
+      <div className="drawer-head"><div><span className="drawer-kicker">TU HISTORIAL EN {brand.toUpperCase()}</span><h2>Mis citas y pedidos</h2></div><div className="history-head-actions"><button className="icon-button" onClick={() => void loadHistory()} disabled={historyLoading} aria-label="Actualizar"><RotateCw size={17} /></button><button className="icon-button" onClick={() => setHistoryOpen(false)} aria-label="Cerrar"><X /></button></div></div>
       <p className="history-intro">Se guardan solo en este teléfono. Mientras no te confirmemos, puedes cambiar la fecha de tu cita o tu pedido.</p>
       <div className="history-tabs" role="tablist">
         <button role="tab" aria-selected={historyTab === 'citas'} className={historyTab === 'citas' ? 'on' : ''} onClick={() => setHistoryTab('citas')}>Citas <b>{historyCount.appointments}</b></button>
@@ -726,6 +730,6 @@ export function Storefront({ data, initialDetailId }: Props) {
       </div>
     </aside></>}
 
-    {canBook && bookingService && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}><X /></button>{bookingConfirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>CITA AGENDADA</span><h2>Te esperamos en ELA.</h2><p>Tu número de cita es</p><strong>{bookingConfirmation.appointmentNumber}</strong><p>Te contactaremos por WhatsApp para confirmar el horario. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(bookingConfirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}{canHistory && <button className="history-cta" onClick={() => openHistory('citas')}><CalendarHeart size={16} />Ver mis citas y pedidos</button>}<button className="text-button" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">{copy.appointmentTitle}</span><h2>{bookingService.name}</h2><p>{bookingService.description}</p><form id="booking-form" onSubmit={submitBooking}>{canHistory && client && <p className="saved-client">Usamos tus datos de la última vez. Cámbialos si hace falta.</p>}<input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} defaultValue={canHistory ? client?.name : undefined} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} defaultValue={canHistory ? client?.phone : undefined} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" defaultValue={canHistory ? client?.email : undefined} /><div className="date-time-row"><label className="field-label">Fecha<input required name="date" type="date" min={todayIso} /></label><label className="field-label">Hora<input required name="time" type="time" step={900} /></label></div><textarea name="notes" placeholder="Notas (opcional)" rows={2} maxLength={600} />{bookingError && <p className="form-error">{bookingError}</p>}</form></div><div className="order-review"><h3>Resumen</h3><div><span>{bookingService.name}</span><strong>{money(bookingService.price)}</strong></div><div className="checkout-total"><span>Duración estimada</span><strong>{bookingService.durationMinutes} min</strong></div>{canPerk && (bookingService.guaranteeDays ?? 0) > 0 && <p className="review-perk"><Sparkles size={14} />Incluye retoque gratis hasta {daysText(bookingService.guaranteeDays ?? 0)} después de tu cita.</p>}<button form="booking-form" disabled={bookingSubmitting} className="primary-button full">{bookingSubmitting ? 'Agendando...' : 'Confirmar cita'}<ArrowRight /></button></div></div>}</div></div>}
+    {canBook && bookingService && <div className="modal-wrap"><div className="modal-card"><button className="modal-close icon-button" aria-label="Cerrar" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}><X /></button>{bookingConfirmation ? <div className="confirmation"><div className="success-icon"><Check /></div><span>CITA AGENDADA</span><h2>Te esperamos en {brand}.</h2><p>Tu número de cita es</p><strong>{bookingConfirmation.appointmentNumber}</strong><p>Te contactaremos por WhatsApp para confirmar el horario. Si quieres, avísanos tú primero:</p><div className="confirmation-actions">{whatsapp && <a className="primary-button wa-green" href={waHref(bookingConfirmation.summary)} target="_blank" rel="noreferrer"><MessageCircle />Enviar por WhatsApp</a>}{canHistory && <button className="history-cta" onClick={() => openHistory('citas')}><CalendarHeart size={16} />Ver mis citas y pedidos</button>}<button className="text-button" onClick={() => { setBookingService(null); setBookingConfirmation(null) }}>Volver a la tienda</button></div></div> : <div className="checkout-grid"><div><span className="drawer-kicker">{copy.appointmentTitle}</span><h2>{bookingService.name}</h2><p>{bookingService.description}</p><form id="booking-form" onSubmit={submitBooking}>{canHistory && client && <p className="saved-client">Usamos tus datos de la última vez. Cámbialos si hace falta.</p>}<input required name="name" placeholder="Nombre completo" autoComplete="name" maxLength={120} defaultValue={canHistory ? client?.name : undefined} /><input required name="phone" type="tel" inputMode="tel" placeholder="Teléfono (WhatsApp)" autoComplete="tel" maxLength={40} defaultValue={canHistory ? client?.phone : undefined} /><input name="email" type="email" placeholder="Correo electrónico (opcional)" autoComplete="email" defaultValue={canHistory ? client?.email : undefined} /><div className="date-time-row"><label className="field-label">Fecha<input required name="date" type="date" min={todayIso} /></label><label className="field-label">Hora<input required name="time" type="time" step={900} /></label></div><textarea name="notes" placeholder="Notas (opcional)" rows={2} maxLength={600} />{bookingError && <p className="form-error">{bookingError}</p>}</form></div><div className="order-review"><h3>Resumen</h3><div><span>{bookingService.name}</span><strong>{money(bookingService.price)}</strong></div><div className="checkout-total"><span>Duración estimada</span><strong>{bookingService.durationMinutes} min</strong></div>{canPerk && (bookingService.guaranteeDays ?? 0) > 0 && <p className="review-perk"><Sparkles size={14} />Incluye retoque gratis hasta {daysText(bookingService.guaranteeDays ?? 0)} después de tu cita.</p>}<button form="booking-form" disabled={bookingSubmitting} className="primary-button full">{bookingSubmitting ? 'Agendando...' : 'Confirmar cita'}<ArrowRight /></button></div></div>}</div></div>}
   </div>
 }

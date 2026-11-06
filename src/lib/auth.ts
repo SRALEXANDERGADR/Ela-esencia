@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { deleteCookie, getCookie, setCookie } from '@tanstack/react-start/server'
 
-const COOKIE_NAME = 'ela_session'
+const COOKIE_NAME = 'tienda_session'
 const SESSION_HOURS = 12
 
 function toHex(buffer: ArrayBuffer) {

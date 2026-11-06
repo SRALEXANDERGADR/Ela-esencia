@@ -8,7 +8,7 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 .site-shell{overflow-x:clip;position:relative}
 
 /* Fondo decorativo — ramitas y flores doradas ilustradas, propias de
-   ELA, pegadas a los 4 rincones de la página: arriba-izquierda,
+   la tienda, pegadas a los 4 rincones de la página: arriba-izquierda,
    abajo-izquierda, arriba-derecha, abajo-derecha. Cada lado combina
    dos especies distintas (una ramita esbelta + un ramo con flores y
    detalle "mosaico") para que izquierda y derecha no se vean iguales,
@@ -56,8 +56,9 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 .topbar-actions{justify-self:end;display:flex;align-items:center;gap:10px}
 
 /* Logotipo — wordmark tipográfico (sin insignia circular), inspirado
-   en firmas caligráficas de boutique: "Ela" en trazo cursivo elegante
-   y "esencia" en versalitas espaciadas debajo. */
+   en firmas caligráficas de boutique: la primera palabra de la marca en
+   trazo cursivo elegante y el resto en versalitas espaciadas debajo
+   (ej.: "Alma" + "Esencial"). */
 .brand-mark{display:inline-flex;flex-direction:column;align-items:center;line-height:1}
 .brand-mark-main{font-family:var(--font-script);font-size:1.9em;font-weight:400;color:var(--ink)}
 .brand-mark-sub{font:500 .32em var(--font-mono);letter-spacing:.34em;text-transform:uppercase;color:var(--gold-dark);margin-top:2px}
@@ -83,8 +84,8 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 .share-icon-badge.messenger{background:linear-gradient(135deg,#00c6ff 0%,#0068ff 50%,#a033ff 100%)}
 .share-icon-badge.copy{background:var(--ink)}
 
-.ela-eyebrow,.drawer-kicker,.card-title span,.admin-main header span,.editor-top span,.product-modal>span,.invoice-summary,.invoice-modal .drawer-kicker{font:500 11px var(--font-mono);letter-spacing:.14em;text-transform:uppercase}
-.ela-eyebrow{display:flex;gap:9px;align-items:center;justify-content:center;color:var(--gold-dark)}
+.home-eyebrow,.drawer-kicker,.card-title span,.admin-main header span,.editor-top span,.product-modal>span,.invoice-summary,.invoice-modal .drawer-kicker{font:500 11px var(--font-mono);letter-spacing:.14em;text-transform:uppercase}
+.home-eyebrow{display:flex;gap:9px;align-items:center;justify-content:center;color:var(--gold-dark)}
 .primary-button{display:inline-flex;align-items:center;justify-content:center;gap:24px;background:var(--gold-dark);color:white;border:0;text-decoration:none;padding:17px 26px;font-weight:600;cursor:pointer;border-radius:2px}
 @media(hover:hover) and (pointer:fine){.primary-button:hover{background:var(--ink);gap:32px}}
 .primary-button svg{width:18px}.primary-button.full{width:100%}.primary-button:disabled{opacity:.45;cursor:not-allowed}
@@ -92,22 +93,22 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 /* Inicio — moderno y minimalista: todo centrado, mucho blanco, tipografía
    grande como protagonista, sin la composición partida en dos columnas
    que usan Ritual Cobre y Alexander. */
-.ela-hero{position:relative;max-width:920px;margin:0 auto;padding:11vw 6vw 7vw;text-align:center;display:flex;flex-direction:column;align-items:center}
-.ela-hero h1{font:600 clamp(44px,7.4vw,104px)/1.02 var(--font-display);letter-spacing:-.01em;margin:22px 0 20px;color:var(--ink)}
-.ela-hero-lede{font-size:18px;line-height:1.75;max-width:560px;color:#6b6152;margin:0 0 34px}
-.ela-hero-banner{width:100%;margin-top:8vw;aspect-ratio:16/8;overflow:hidden;background:#ece2cf}
-.ela-hero-banner img{width:100%;height:100%;object-fit:cover}
+.home-hero{position:relative;max-width:920px;margin:0 auto;padding:11vw 6vw 7vw;text-align:center;display:flex;flex-direction:column;align-items:center}
+.home-hero h1{font:600 clamp(44px,7.4vw,104px)/1.02 var(--font-display);letter-spacing:-.01em;margin:22px 0 20px;color:var(--ink)}
+.home-hero-lede{font-size:18px;line-height:1.75;max-width:560px;color:#6b6152;margin:0 0 34px}
+.home-hero-banner{width:100%;margin-top:8vw;aspect-ratio:16/8;overflow:hidden;background:#ece2cf}
+.home-hero-banner img{width:100%;height:100%;object-fit:cover}
 
-.ela-manifesto{position:relative;background:var(--white);padding:100px 7vw;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-.ela-section-heading{text-align:center;max-width:640px;margin:0 auto 64px}
-.ela-section-heading span{display:block;font:500 11px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--gold-dark);margin-bottom:14px}
-.ela-section-heading h2{font:600 clamp(34px,4.2vw,54px)/1.08 var(--font-display);letter-spacing:0;margin:0;color:var(--ink)}
-.ela-section-heading p{margin:16px 0 0;color:var(--muted);font-size:16px;line-height:1.7}
-.ela-manifesto-grid{max-width:900px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:48px}
-.ela-manifesto-grid article{text-align:center}
-.ela-manifesto-grid span{display:block;font:11px var(--font-mono);color:var(--gold-dark);margin-bottom:14px}
-.ela-manifesto-grid h3{font:600 22px var(--font-display);margin:0 0 10px;color:var(--ink)}
-.ela-manifesto-grid p{margin:0;color:var(--muted);line-height:1.7;font-size:14px}
+.home-manifesto{position:relative;background:var(--white);padding:100px 7vw;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.home-section-heading{text-align:center;max-width:640px;margin:0 auto 64px}
+.home-section-heading span{display:block;font:500 11px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--gold-dark);margin-bottom:14px}
+.home-section-heading h2{font:600 clamp(34px,4.2vw,54px)/1.08 var(--font-display);letter-spacing:0;margin:0;color:var(--ink)}
+.home-section-heading p{margin:16px 0 0;color:var(--muted);font-size:16px;line-height:1.7}
+.home-manifesto-grid{max-width:900px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:48px}
+.home-manifesto-grid article{text-align:center}
+.home-manifesto-grid span{display:block;font:11px var(--font-mono);color:var(--gold-dark);margin-bottom:14px}
+.home-manifesto-grid h3{font:600 22px var(--font-display);margin:0 0 10px;color:var(--ink)}
+.home-manifesto-grid p{margin:0;color:var(--muted);line-height:1.7;font-size:14px}
 .catalog{position:relative;padding:110px 5vw}
 .catalog-layout{display:grid;grid-template-columns:250px 1fr;gap:5vw}
 .filters{position:sticky;top:calc(110px + var(--gd-h,0px));height:max-content}
@@ -156,10 +157,10 @@ button,input,textarea,select{font:inherit}button,a{transition:.25s ease}button{c
 .service-info .product-action button{gap:6px;border:1px solid var(--gold-dark);padding:6px 10px;color:var(--gold-dark);font-size:11px}
 @media(hover:hover) and (pointer:fine){.service-info .product-action button:hover{background:var(--gold-dark);color:white;gap:8px}}
 
-.ela-story{position:relative;max-width:760px;margin:0 auto;padding:9vw 6vw;text-align:center}
-.ela-story h2{font:600 clamp(34px,4.6vw,54px)/1.1 var(--font-display);letter-spacing:0;margin:18px 0 20px;color:var(--ink)}
-.ela-story p{line-height:1.9;font-size:18px;color:#5b5142}
-.ela-story-signature{font:600 30px var(--font-display);margin-top:30px;color:var(--gold-dark)}
+.home-story{position:relative;max-width:760px;margin:0 auto;padding:9vw 6vw;text-align:center}
+.home-story h2{font:600 clamp(34px,4.6vw,54px)/1.1 var(--font-display);letter-spacing:0;margin:18px 0 20px;color:var(--ink)}
+.home-story p{line-height:1.9;font-size:18px;color:#5b5142}
+.home-story-signature{font:600 30px var(--font-display);margin-top:30px;color:var(--gold-dark)}
 
 footer{position:relative;background:var(--ink);color:var(--white);display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:5vw;padding:80px 7vw 35px}
 .footer-mark{font-size:44px}
@@ -409,8 +410,8 @@ td select{border:0;background:#efe6d5;padding:7px}
   .table-wrap .row-actions{width:100%;justify-content:flex-end;gap:8px}
 }
 
-@media(max-width:900px){.ela-hero{padding:80px 7vw 60px}.catalog-layout{grid-template-columns:1fr}.filters{position:static}.category-list{display:flex;gap:12px;overflow:auto}.category-list button{gap:10px;white-space:nowrap}.product-row{grid-template-columns:35px 150px 1fr}.product-action{grid-column:3;flex-direction:row;align-items:center}.service-grid{grid-template-columns:1fr;gap:12px}.service-card{grid-template-columns:110px 1fr}.ela-manifesto-grid{grid-template-columns:1fr;gap:40px}footer{grid-template-columns:1fr 1fr}.footer-brand{grid-column:1/-1}.checkout-grid{grid-template-columns:1fr}.admin-sidebar{width:78px;padding:25px 10px}.admin-brand>div,.admin-sidebar nav button:not(.active){font-size:0}.admin-sidebar nav button.active{font-size:0}.admin-sidebar nav button,.logout{justify-content:center}.logout{font-size:0}.admin-main{margin-left:78px}.metric-grid{grid-template-columns:1fr 1fr}.customer-grid{grid-template-columns:1fr 1fr}}
-@media(max-width:620px){.service-card{grid-template-columns:88px 1fr}.service-info{padding:10px 12px}.service-info h3{font-size:16px}.service-info>p{display:none}.service-meta{margin-top:0}.service-info .product-action{margin-top:6px}.topbar{height:72px}.wordmark{font-size:22px}.cart-button span{display:none}.ela-hero{padding:60px 20px 40px}.ela-hero h1{font-size:42px}.ela-hero-banner{aspect-ratio:4/5;margin-top:40px}.ela-manifesto,.catalog{padding:60px 20px}.product-row{grid-template-columns:25px 105px 1fr;gap:12px}.product-image{height:145px}.product-info h3{font-size:19px}.product-info>p{display:none}.product-action{grid-column:2/-1}.ela-story{padding:60px 20px}footer{grid-template-columns:1fr;padding:60px 25px 25px}.footer-bottom{flex-direction:column;align-items:center;gap:18px;text-align:center}.modal-card,.product-modal{padding:40px 20px}.checkout-grid h2{font-size:34px}.date-time-row{grid-template-columns:1fr}.policies-page{padding:30px 20px}.policy-grid{grid-template-columns:1fr}.policy-grid article{padding:35px 0!important;border-right:0!important}.admin-login{grid-template-columns:1fr}.login-art{min-height:250px}.login-monogram{font-size:40vw;position:absolute;right:10px}.login-form-wrap{padding:40px 22px}.login-form-wrap h1{font-size:42px}.admin-sidebar{position:fixed;top:auto;right:0;width:auto;height:70px;z-index:30;flex-direction:row;padding:8px;align-items:center}.admin-brand,.logout{display:none}.admin-sidebar nav{display:flex;margin:0;width:100%;justify-content:space-around;overflow-x:auto}.admin-sidebar nav button,.admin-sidebar nav button.active{padding:12px;font-size:0}.admin-main{margin-left:0;padding:25px 15px 100px}.admin-main>header{align-items:flex-start}.admin-main>header h1{font-size:30px}.metric-grid{grid-template-columns:1fr 1fr}.customer-grid{grid-template-columns:1fr}.form-grid,.editor-fields{grid-template-columns:1fr}.wide{grid-column:auto}.content-editor,.admin-card{padding:20px}.editor-top,.card-title{align-items:flex-start;gap:18px}.editor-top{flex-direction:column}.admin-action{white-space:nowrap}.invoice-figures{grid-template-columns:1fr}}
+@media(max-width:900px){.home-hero{padding:80px 7vw 60px}.catalog-layout{grid-template-columns:1fr}.filters{position:static}.category-list{display:flex;gap:12px;overflow:auto}.category-list button{gap:10px;white-space:nowrap}.product-row{grid-template-columns:35px 150px 1fr}.product-action{grid-column:3;flex-direction:row;align-items:center}.service-grid{grid-template-columns:1fr;gap:12px}.service-card{grid-template-columns:110px 1fr}.home-manifesto-grid{grid-template-columns:1fr;gap:40px}footer{grid-template-columns:1fr 1fr}.footer-brand{grid-column:1/-1}.checkout-grid{grid-template-columns:1fr}.admin-sidebar{width:78px;padding:25px 10px}.admin-brand>div,.admin-sidebar nav button:not(.active){font-size:0}.admin-sidebar nav button.active{font-size:0}.admin-sidebar nav button,.logout{justify-content:center}.logout{font-size:0}.admin-main{margin-left:78px}.metric-grid{grid-template-columns:1fr 1fr}.customer-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){.service-card{grid-template-columns:88px 1fr}.service-info{padding:10px 12px}.service-info h3{font-size:16px}.service-info>p{display:none}.service-meta{margin-top:0}.service-info .product-action{margin-top:6px}.topbar{height:72px}.wordmark{font-size:22px}.cart-button span{display:none}.home-hero{padding:60px 20px 40px}.home-hero h1{font-size:42px}.home-hero-banner{aspect-ratio:4/5;margin-top:40px}.home-manifesto,.catalog{padding:60px 20px}.product-row{grid-template-columns:25px 105px 1fr;gap:12px}.product-image{height:145px}.product-info h3{font-size:19px}.product-info>p{display:none}.product-action{grid-column:2/-1}.home-story{padding:60px 20px}footer{grid-template-columns:1fr;padding:60px 25px 25px}.footer-bottom{flex-direction:column;align-items:center;gap:18px;text-align:center}.modal-card,.product-modal{padding:40px 20px}.checkout-grid h2{font-size:34px}.date-time-row{grid-template-columns:1fr}.policies-page{padding:30px 20px}.policy-grid{grid-template-columns:1fr}.policy-grid article{padding:35px 0!important;border-right:0!important}.admin-login{grid-template-columns:1fr}.login-art{min-height:250px}.login-monogram{font-size:40vw;position:absolute;right:10px}.login-form-wrap{padding:40px 22px}.login-form-wrap h1{font-size:42px}.admin-sidebar{position:fixed;top:auto;right:0;width:auto;height:70px;z-index:30;flex-direction:row;padding:8px;align-items:center}.admin-brand,.logout{display:none}.admin-sidebar nav{display:flex;margin:0;width:100%;justify-content:space-around;overflow-x:auto}.admin-sidebar nav button,.admin-sidebar nav button.active{padding:12px;font-size:0}.admin-main{margin-left:0;padding:25px 15px 100px}.admin-main>header{align-items:flex-start}.admin-main>header h1{font-size:30px}.metric-grid{grid-template-columns:1fr 1fr}.customer-grid{grid-template-columns:1fr}.form-grid,.editor-fields{grid-template-columns:1fr}.wide{grid-column:auto}.content-editor,.admin-card{padding:20px}.editor-top,.card-title{align-items:flex-start;gap:18px}.editor-top{flex-direction:column}.admin-action{white-space:nowrap}.invoice-figures{grid-template-columns:1fr}}
 
 /* ═══════════════════════════════════════════════════════════════════
    MEJORAS 2026-09 — tienda y panel más claros. Mismos colores.

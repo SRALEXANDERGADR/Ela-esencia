@@ -1,3 +1,4 @@
+import { BRAND } from './brand'
 import { createServerFn } from '@tanstack/react-start'
 import { env } from 'cloudflare:workers'
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
@@ -22,36 +23,37 @@ const TRASH_MS = TRASH_DAYS * 24 * 60 * 60 * 1000
 export type CartLine = { productId: number; name: string; price: number; quantity: number; image: string }
 
 const defaultContent: Record<string, string> = {
-  brandName: 'ELA',
-  brandTagline: 'La belleza de ser tú.',
+  brandName: BRAND.name,
+  brandTagline: BRAND.tagline,
   navServices: 'Servicios',
   navCatalog: 'Productos',
   navBenefits: 'Por qué elegirnos',
   navContact: 'Contacto',
   eyebrow: 'Belleza · Cuidado · Bienestar',
-  heroTitle: 'La belleza de ser tú.',
-  heroDescription: 'Servicios de belleza y productos artesanales hechos a mano, para realzar tu belleza natural y cuidar tu piel con amor.',
+  heroTitle: BRAND.tagline,
+  heroDescription: 'Cejas, pestañas y faciales hechos con calma, y productos naturales hechos a mano para cuidar tu piel todos los días.',
   heroCta: 'Ver servicios y productos',
-  heroImage: 'https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?auto=format&fit=crop&w=1400&q=85',
-  benefitsTitle: 'Mimate. Cuida tu piel. Realza tu belleza.',
-  benefit1Title: 'Productos artesanales',
-  benefit1Text: 'Hechos a mano con ingredientes naturales.',
-  benefit2Title: 'Hechos con amor',
-  benefit2Text: 'Cada detalle está hecho para ti.',
-  benefit3Title: 'Realza tu belleza',
-  benefit3Text: 'Servicios personalizados para resaltar lo mejor de ti.',
+  heroImage: '/catalogo/portada-facial.jpg',
+  benefitsTitle: 'Mímate. Cuida tu piel. Siéntete tú.',
+  benefit1Title: 'Hecho a mano',
+  benefit1Text: 'Jabones, mantequillas y aceites con ingredientes naturales.',
+  benefit2Title: 'Atención con calma',
+  benefit2Text: 'Cada cita es solo para ti, sin prisa.',
+  benefit3Title: 'Belleza natural',
+  benefit3Text: 'Resaltamos lo que ya tienes, sin exagerar.',
   servicesTitle: 'Servicios de belleza',
-  servicesDescription: 'Diseño de cejas y pestañas, pensados para realzar tu mirada de forma natural.',
-  catalogTitle: 'Productos artesanales',
-  catalogDescription: 'Jabones y mantequillas corporales elaborados artesanalmente con ingredientes naturales que limpian, nutren y cuidan tu piel.',
-  storyTitle: 'La belleza de ser tú.',
-  storyText: 'ELA nace para recordarte que cuidar tu piel y realzar tu belleza es también un acto de bienestar. Cada producto se elabora a mano y cada servicio se adapta a ti.',
-  footerText: 'Belleza, cuidado y bienestar en Jarabacoa, República Dominicana.',
-  whatsapp: '18298473618',
-  location: 'Jarabacoa, República Dominicana',
-  instagram: '@ela.esencia',
-  tiktok: '@ela.esencia',
-  schedule: 'Lunes a sábado · previa cita',
+  servicesDescription: 'Cejas, pestañas y faciales pensados para realzar tu mirada y tu piel de forma natural.',
+  catalogTitle: 'Hecho a mano',
+  catalogDescription: 'Jabones, mantequillas y aceites corporales con ingredientes naturales que limpian, nutren y cuidan tu piel.',
+  storyTitle: BRAND.tagline,
+  storyText: `${BRAND.name} nace de una idea sencilla: cuidarte también es quererte. Por eso cada producto se hace a mano, en pequeñas tandas, y cada cita se adapta a ti y a tu tiempo.`,
+  footerText: 'Belleza, cuidado y bienestar en República Dominicana.',
+  // Los datos de contacto los pone cada dueña en «Textos de la web».
+  whatsapp: '',
+  location: '',
+  instagram: '',
+  tiktok: '',
+  schedule: 'Lunes a sábado · con cita previa',
   // Se muestran en el pie de la tienda (separados por coma). Vacío = no se muestran.
   paymentMethods: 'Efectivo, Transferencia',
   developerCredit: 'Diseño y desarrollo de la tienda',
@@ -63,11 +65,21 @@ const defaultContent: Record<string, string> = {
   notificationEmail: '',
 }
 
+// Artículos de ejemplo de una web nueva. Las fotos están en public/catalogo
+// (fotos de Pexels: se pueden usar gratis, también para vender). La dueña las
+// cambia desde el panel por las suyas.
 const seedProducts = [
-  { kind: 'servicio', name: 'Diseño y arreglo de cejas', category: 'Cejas', description: 'Realza tu mirada con unas cejas definidas, armoniosas y adaptadas a tu rostro.', price: 15000, stock: 0, durationMinutes: 30, image: 'https://images.unsplash.com/photo-1583001931096-959e9a1a6223?auto=format&fit=crop&w=900&q=85', featured: true },
-  { kind: 'servicio', name: 'Pestañas por grupito', category: 'Pestañas', description: 'Aplicación de pestañas por grupitos para lograr una mirada más intensa, natural y femenina, adaptada al estilo que deseas.', price: 30000, stock: 0, durationMinutes: 60, image: 'https://images.unsplash.com/photo-1591019479261-15d8f1a4c7c0?auto=format&fit=crop&w=900&q=85', featured: true },
-  { kind: 'producto', name: 'Jabón artesanal ELA', category: 'Jabones', description: 'Jabones elaborados artesanalmente con ingredientes naturales que limpian, nutren y cuidan tu piel.', price: 20000, stock: 20, durationMinutes: 0, image: 'https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?auto=format&fit=crop&w=900&q=85', featured: true },
-  { kind: 'producto', name: 'Mantequilla corporal artesanal', category: 'Mantequillas', description: 'Texturas nutritivas e hidratantes que dejan tu piel suave, luminosa y con un delicioso aroma.', price: 25000, stock: 15, durationMinutes: 0, image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=900&q=85', featured: true },
+  { kind: 'servicio', name: 'Diseño y perfilado de cejas', category: 'Cejas', description: 'Diseñamos tus cejas según la forma de tu rostro, con pinza y cera, para una mirada limpia y natural.', price: 50000, stock: 0, durationMinutes: 45, guaranteeDays: 15, image: '/catalogo/cejas.jpg', featured: true },
+  { kind: 'servicio', name: 'Pestañas por grupito', category: 'Pestañas', description: 'Pestañas por grupitos para una mirada más intensa y natural. Duran de 2 a 3 semanas con buen cuidado.', price: 90000, stock: 0, durationMinutes: 60, guaranteeDays: 7, image: '/catalogo/pestanas-grupito.jpg', featured: true },
+  { kind: 'servicio', name: 'Lifting de pestañas', category: 'Pestañas', description: 'Levanta y curva tus pestañas naturales, sin extensiones. El efecto dura de 6 a 8 semanas.', price: 150000, stock: 0, durationMinutes: 60, guaranteeDays: 0, image: '/catalogo/lifting-pestanas.jpg', featured: false },
+  { kind: 'servicio', name: 'Limpieza facial profunda', category: 'Facial', description: 'Limpieza, exfoliación, extracción suave y mascarilla según tu tipo de piel. Sales con la piel fresca y luminosa.', price: 180000, stock: 0, durationMinutes: 75, guaranteeDays: 0, image: '/catalogo/limpieza-facial.jpg', featured: false },
+  { kind: 'producto', name: 'Jabón de avena y miel', category: 'Jabones', description: 'Limpia sin resecar y calma la piel sensible. Hecho a mano con avena, miel y aceite de coco. Barra de 110 g.', price: 25000, stock: 18, durationMinutes: 0, guaranteeDays: 0, image: '/catalogo/jabon-avena-miel.jpg', featured: false },
+  { kind: 'producto', name: 'Jabón de rosa mosqueta', category: 'Jabones', description: 'Con aceite de rosa mosqueta y pétalos secos. Hidrata y deja un aroma suave y floral. Barra de 110 g.', price: 27500, stock: 12, durationMinutes: 0, guaranteeDays: 0, image: '/catalogo/jabon-rosa-mosqueta.jpg', featured: true },
+  { kind: 'producto', name: 'Jabón de coco y oliva', category: 'Jabones', description: 'Espuma cremosa para todo el cuerpo, con aceite de coco y de oliva. Ideal para todos los días. Barra de 110 g.', price: 25000, stock: 15, durationMinutes: 0, guaranteeDays: 0, image: '/catalogo/jabon-coco-oliva.jpg', featured: false },
+  { kind: 'producto', name: 'Exfoliante de café', category: 'Cuerpo', description: 'Café molido, azúcar y aceite de coco para quitar la piel muerta y dejarla suave. Úsalo 2 veces por semana. Frasco de 200 g.', price: 45000, originalPrice: 50000, stock: 10, durationMinutes: 0, guaranteeDays: 0, image: '/catalogo/exfoliante-cafe.jpg', featured: false },
+  { kind: 'producto', name: 'Mantequilla corporal de karité', category: 'Cuerpo', description: 'Nutrición profunda para la piel seca, con manteca de karité y cacao. Se absorbe rápido y no deja la piel grasosa. Frasco de 200 g.', price: 55000, stock: 9, durationMinutes: 0, guaranteeDays: 7, image: '/catalogo/mantequilla-karite.jpg', featured: true },
+  { kind: 'producto', name: 'Aceite corporal de almendras', category: 'Cuerpo', description: 'Aceite de almendras dulces con vitamina E para después del baño. Deja la piel suave y con brillo natural. Frasco de 100 ml.', price: 60000, stock: 8, durationMinutes: 0, guaranteeDays: 7, image: '/catalogo/aceite-almendras.jpg', featured: false },
+  { kind: 'producto', name: 'Bálsamo labial de rosa', category: 'Labios', description: 'Repara y protege los labios resecos con manteca de karité y aceite de rosa. Lata de 15 g.', price: 20000, stock: 20, durationMinutes: 0, guaranteeDays: 0, image: '/catalogo/balsamo-labial.jpg', featured: false },
 ]
 
 function pad(value: number, length = 2) {
@@ -1130,10 +1142,10 @@ export const purgeCustomer = createServerFn({ method: 'POST' }).inputValidator((
 })
 
 // ───────────────────────────────────────────────────────────────────────
-// NOTIFICACIONES AL TELÉFONO (app "ELA Admin") — ver src/lib/push.ts.
+// NOTIFICACIONES AL TELÉFONO (app «<marca> Admin») — ver src/lib/push.ts.
 // Igual que en JB Tech Store: Web Push hecho a mano con WebCrypto.
 // ───────────────────────────────────────────────────────────────────────
-const PUSH_SUBJECT = 'https://elaesencia.gadrnet.workers.dev'
+const PUSH_SUBJECT = BRAND.site
 
 
 function prettyDateEs(iso: string) {

@@ -1,4 +1,4 @@
-// Service worker de la app "ELA Admin" (el panel admin instalado como app).
+// Service worker de la app «Alma Admin» (el panel admin instalado como app).
 // Recibe los avisos de citas y pedidos nuevos aunque la app esté cerrada, los
 // muestra como notificación (con el punto en el ícono) y, al tocarlos,
 // abre la app directo en Citas o Pedidos.
@@ -29,13 +29,13 @@ async function updateBadge() {
 self.addEventListener('push', (event) => {
   let data = {}
   try { data = event.data ? event.data.json() : {} } catch (error) { data = { body: event.data ? event.data.text() : '' } }
-  const title = data.title || '🔔 ELA'
+  const title = data.title || '🔔 Alma Esencial'
   event.waitUntil((async () => {
     await self.registration.showNotification(title, {
       body: data.body || 'Hay novedades en la tienda.',
       icon: '/admin-192.png',
       badge: '/badge-96.png',
-      tag: data.tag || 'ela',
+      tag: data.tag || 'aviso',
       renotify: true,
       vibrate: [200, 100, 200],
       data: { url: data.url || '/admin' },

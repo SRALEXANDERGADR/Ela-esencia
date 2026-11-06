@@ -1,27 +1,27 @@
 {
   "id": "/",
-  "name": "ELA Esencia",
-  "short_name": "ELA",
-  "description": "Servicios de belleza y productos artesanales en Jarabacoa.",
+  "name": "Alma Esencial",
+  "short_name": "Alma Esencial",
+  "description": "Servicios de belleza y productos naturales hechos a mano.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "lang": "es",
   "icons": [
     {
-      "src": "/android-chrome-192x192.png?v=2",
+      "src": "/android-chrome-192x192.png?v=3",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/android-chrome-512x512.png?v=2",
+      "src": "/android-chrome-512x512.png?v=3",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/android-chrome-maskable-512x512.png?v=2",
+      "src": "/android-chrome-maskable-512x512.png?v=3",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

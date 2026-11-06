@@ -1,6 +1,6 @@
 /**
  * Ilustraciones decorativas originales de ramitas/ramos con hojas, en
- * el estilo dorado/beige de ELA. Son arte propio (curvas dibujadas a
+ * el estilo dorado/beige de la tienda. Son arte propio (curvas dibujadas a
  * mano), no una copia de ninguna imagen de referencia — solo se
  * inspiran en la idea general de "matas" doradas minimalistas que
  * decoran los costados de la página. Este archivo exporta dos

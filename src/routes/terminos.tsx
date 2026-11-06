@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { BRAND } from '@/lib/brand'
 import { ArrowLeft } from 'lucide-react'
 
 export const Route = createFileRoute('/terminos')({
@@ -12,7 +13,7 @@ function Terms() {
     <main className="policies-page">
       <Link to="/" className="back-link"><ArrowLeft /> Volver a la tienda</Link>
       <div className="policies-title">
-        <span>ELA · INFORMACIÓN LEGAL</span>
+        <span>{BRAND.name.toUpperCase()} · INFORMACIÓN LEGAL</span>
         <h1>Términos y<br />condiciones.</h1>
         <p>Última actualización: 31 de agosto de 2026</p>
       </div>

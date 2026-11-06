@@ -11,6 +11,7 @@
 // imagen para que el cliente igual se quede con su factura.
 // ═══════════════════════════════════════════════════════════════════════
 import { jsPDF } from 'jspdf'
+import { BRAND } from './brand'
 import { formatMoney as money } from './money'
 
 export type InvoiceLike = {
@@ -44,9 +45,14 @@ export type PaymentLike = {
 const longDate = (value: string | Date) => new Intl.DateTimeFormat('es-DO', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(value))
 
 // Datos del negocio que salen en la factura (vienen de "Textos de la web").
-let business = { whatsapp: '18298473618', location: 'Jarabacoa, República Dominicana' }
-export function setInvoiceBusiness(next: { whatsapp?: string; location?: string }) {
-  business = { whatsapp: next.whatsapp || business.whatsapp, location: next.location || business.location }
+let business = { name: BRAND.name, tagline: BRAND.tagline, whatsapp: '', location: '' }
+export function setInvoiceBusiness(next: { name?: string; tagline?: string; whatsapp?: string; location?: string }) {
+  business = {
+    name: next.name?.trim() || business.name,
+    tagline: next.tagline?.trim() || business.tagline,
+    whatsapp: next.whatsapp || business.whatsapp,
+    location: next.location || business.location,
+  }
 }
 function prettyPhone(value: string) {
   const d = value.replace(/\D/g, '')
@@ -72,13 +78,13 @@ function buildInvoiceHtml(invoice: InvoiceLike): string {
   const origen = invoice.sourceType === 'cita' ? 'Servicio agendado' : 'Pedido de productos'
 
   return `
-    <div id="ela-doc" style="width:720px;background:#ffffff;color:#2b241c;font-family:Georgia,'Times New Roman',serif;padding:44px;box-sizing:border-box;">
+    <div id="factura-doc" style="width:720px;background:#ffffff;color:#2b241c;font-family:Georgia,'Times New Roman',serif;padding:44px;box-sizing:border-box;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #c9a26a;padding-bottom:20px;margin-bottom:28px;">
         <div>
-          <div style="font-size:24px;font-weight:bold;letter-spacing:.06em;color:#2b241c;">ELA</div>
-          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#b08c56;margin-top:2px;">La belleza de ser tú</div>
-          <div style="font-size:12px;color:#7a6d5c;margin-top:6px;">${escapeHtml(business.location)}</div>
-          <div style="font-size:12px;color:#7a6d5c;">WhatsApp: ${escapeHtml(prettyPhone(business.whatsapp))}</div>
+          <div style="font-size:24px;font-weight:bold;letter-spacing:.06em;color:#2b241c;">${escapeHtml(business.name)}</div>
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#b08c56;margin-top:2px;">${escapeHtml(business.tagline.replace(/[.。]+$/, ''))}</div>
+          ${business.location ? `<div style="font-size:12px;color:#7a6d5c;margin-top:6px;">${escapeHtml(business.location)}</div>` : ''}
+          ${business.whatsapp ? `<div style="font-size:12px;color:#7a6d5c;">WhatsApp: ${escapeHtml(prettyPhone(business.whatsapp))}</div>` : ''}
         </div>
         <div style="text-align:right;">
           <div style="font-size:20px;font-weight:bold;color:#8a5a35;letter-spacing:.05em;">FACTURA</div>
@@ -135,7 +141,7 @@ function buildInvoiceHtml(invoice: InvoiceLike): string {
       </div>` : ''}
 
       <div style="border-top:1px solid #eee2cf;padding-top:16px;font-size:11px;color:#a99a84;text-align:center;">
-        Gracias por confiar en ELA. Documento generado automáticamente y sin firma requerida.<br>
+        Gracias por confiar en ${escapeHtml(business.name)}. Documento generado automáticamente y sin firma requerida.<br>
         Este documento se conserva en nuestro sistema. Si necesitas una copia o información relacionada con esta factura, puedes contactarnos.
       </div>
     </div>`
@@ -144,12 +150,12 @@ function buildInvoiceHtml(invoice: InvoiceLike): string {
 function buildReceiptHtml(invoice: InvoiceLike, payment: PaymentLike): string {
   const saldoTrasPago = Math.max(invoice.total - invoice.paid, 0)
   return `
-    <div id="ela-doc" style="width:720px;background:#ffffff;color:#2b241c;font-family:Georgia,'Times New Roman',serif;padding:44px;box-sizing:border-box;">
+    <div id="factura-doc" style="width:720px;background:#ffffff;color:#2b241c;font-family:Georgia,'Times New Roman',serif;padding:44px;box-sizing:border-box;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #c9a26a;padding-bottom:20px;margin-bottom:28px;">
         <div>
-          <div style="font-size:24px;font-weight:bold;letter-spacing:.06em;color:#2b241c;">ELA</div>
-          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#b08c56;margin-top:2px;">La belleza de ser tú</div>
-          <div style="font-size:12px;color:#7a6d5c;margin-top:6px;">WhatsApp: ${escapeHtml(prettyPhone(business.whatsapp))}</div>
+          <div style="font-size:24px;font-weight:bold;letter-spacing:.06em;color:#2b241c;">${escapeHtml(business.name)}</div>
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#b08c56;margin-top:2px;">${escapeHtml(business.tagline.replace(/[.。]+$/, ''))}</div>
+          ${business.whatsapp ? `<div style="font-size:12px;color:#7a6d5c;margin-top:6px;">WhatsApp: ${escapeHtml(prettyPhone(business.whatsapp))}</div>` : ''}
         </div>
         <div style="text-align:right;">
           <div style="font-size:20px;font-weight:bold;color:#8a5a35;letter-spacing:.05em;">RECIBO DE PAGO</div>
@@ -198,7 +204,7 @@ function buildReceiptHtml(invoice: InvoiceLike, payment: PaymentLike): string {
       </table>
 
       <div style="border-top:1px solid #eee2cf;padding-top:16px;font-size:11px;color:#a99a84;text-align:center;">
-        Este recibo confirma un pago ya recibido y no cambia aunque el estado de la factura cambie después. Gracias por confiar en ELA.
+        Este recibo confirma un pago ya recibido y no cambia aunque el estado de la factura cambie después. Gracias por confiar en ${escapeHtml(business.name)}.
       </div>
     </div>`
 }
@@ -295,11 +301,11 @@ async function shareDoc(html: string, fileNamePrefix: string, folio: string, sha
 }
 
 export async function shareInvoice(invoice: InvoiceLike) {
-  const text = `Factura ${invoice.folio} de ${invoice.customerName} — ELA`
+  const text = `Factura ${invoice.folio} de ${invoice.customerName} — ${business.name}`
   await shareDoc(buildInvoiceHtml(invoice), 'Factura', invoice.folio, `Factura ${invoice.folio}`, text)
 }
 
 export async function shareReceipt(invoice: InvoiceLike, payment: PaymentLike) {
-  const text = `Recibo ${payment.folio} de ${invoice.customerName} — ELA`
+  const text = `Recibo ${payment.folio} de ${invoice.customerName} — ${business.name}`
   await shareDoc(buildReceiptHtml(invoice, payment), 'Recibo', payment.folio, `Recibo ${payment.folio}`, text)
 }

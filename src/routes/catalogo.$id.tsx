@@ -2,12 +2,13 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Storefront } from '@/components/Storefront'
 import { getStorefront } from '@/lib/store'
 import { formatMoney } from '@/lib/money'
+import { BRAND } from '@/lib/brand'
 
 // Enlace de «Enviar a una amiga»: /catalogo/<id>. Abre la tienda con la ficha
 // de ese servicio o producto ya abierta y, al pegarlo en WhatsApp o Facebook,
 // sale con su foto, su nombre y su precio. (El botón es del plan Completo; el
 // enlace funciona en cualquier plan.)
-const SITE = 'https://elaesencia.gadrnet.workers.dev'
+const SITE = BRAND.site
 
 export const Route = createFileRoute('/catalogo/$id')({
   loader: async ({ params }) => {
@@ -19,7 +20,7 @@ export const Route = createFileRoute('/catalogo/$id')({
     const links = [{ rel: 'manifest', href: '/site.webmanifest' }]
     const product = loaderData?.product
     if (!product || !loaderData) return { links }
-    const brand = loaderData.data.content.brandName || 'ELA'
+    const brand = loaderData.data.content.brandName || BRAND.name
     const image = new URL(product.image || '/og-cover.jpg', SITE).toString()
     const title = `${product.name} · ${brand}`
     const what = product.kind === 'servicio' ? `Agenda tu cita en ${brand}.` : `Pídelo en ${brand}.`
