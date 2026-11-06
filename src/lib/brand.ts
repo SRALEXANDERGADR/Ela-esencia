@@ -11,7 +11,7 @@ export const BRAND = {
   description: 'Servicios de belleza (cejas, pestañas y faciales) y productos hechos a mano (jabones, mantequillas y aceites corporales) en República Dominicana.',
   shareDescription: 'Belleza, cuidado y bienestar: cejas, pestañas y faciales, y productos naturales hechos a mano.',
   // Cambia cuando la web tenga su dominio propio (sin «/» al final).
-  site: 'https://elaesencia.gadrnet.workers.dev',
+  site: 'https://almaesencial.gadrnet.workers.dev',
 }
 
 export const BRAND_TITLE = `${BRAND.name} — ${BRAND.tagline}`
